@@ -295,11 +295,12 @@ function buildandrun(s::LWMS.BasicInput)
     shfile = writeshfile()
 
     run(`cp $exefile $rundir`)
-
+    
+    #==
     jobname = read(`sbatch $shfile`, String)
     jobid = strip(jobname)
 
     println("Job $jobid submitted!\n")
-
+    ==#
     return nothing
 end
