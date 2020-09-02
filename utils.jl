@@ -58,6 +58,7 @@ function writeshfile(s::Summit)
     numnodes = s.numnodes
     walltime = s.walltime
     exefile = s.exefile
+    exefile = basename(exefile)
 
     shfile = joinpath(rundir, runname*".sh")
     endline = "\n"

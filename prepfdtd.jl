@@ -25,7 +25,7 @@ struct Defaults
     sourcealt::Float64
     rsspeed::Float64
 end
-Defaults() = Defaults(20e-6, 50e-6, 10e3, 0, 60000, 5000, -0.75*VACUUM_SPEED_OF_LIGHT)
+Defaults() = Defaults(20e-6, 50e-6, 10e3, 0, 60000, 5000, -0.75*LWMS.C0)
 
 """
     Inputs
@@ -135,7 +135,7 @@ end
 
 mutable struct Ground
     gsigma::Vector{Float64}
-    gepsilon::Vector{Float64}
+    gepsilon::Vector{Int}
 
     Ground() = new()
 end
@@ -154,7 +154,7 @@ function writeinputs(s::Inputs; path="")
 end
 
 function writesource(s::Source; path="")
-    open(hoinpath(path,"source.dat"), "w") do f
+    open(joinpath(path,"source.dat"), "w") do f
         for field in fieldnames(Source)
             write(f, getfield(s, field))
         end
@@ -170,9 +170,8 @@ function writeground(s::Ground; path="")
 end
 
 function writebfield(Bmag, in::Inputs; path="")
-    range, drange = generate_rdr(in)
-    thmax = range/in.Re
-    dth = drange/in.Re
+    thmax = in.range/in.Re
+    dth = in.drange/in.Re
     hh = round(Int, thmax/dth) + 1
 
     Br = fill(convert(Float64, Bmag), hh)
@@ -194,7 +193,7 @@ end
 
 function writeni(ne; path="")
     ni = copy(ne)
-    ni[ni .< 100e6] = 100e6
+    ni[ni .< 100e6] .= 100e6
 
     open(joinpath(path,"ni.dat"), "w") do f
         write(f, ni)
@@ -213,15 +212,15 @@ end
 
 function writenu(nu; path="")
     open(joinpath(path,"nu.dat"), "w") do f
-        write(f, ndt)
+        write(f, nu)
     end
 end
 
-function fdtd(file::AbstractString, walltime::String)
+function fdtd(file::AbstractString, rundir::String, walltime::String)
     ispath(file) || error("$file is not a valid file name")
 
     s = LWMS.parse(file)
-    buildandrun(s, walltime)
+    buildandrun(s, rundir, walltime)
 
     return nothing
 end
@@ -231,7 +230,7 @@ end
 
 With default (coarse) inputs.
 """
-function buildandrun(s::LWMS.BasicInput, walltime::String)
+function buildandrun(s::LWMS.BasicInput, rundir::String, walltime::String)
 
     all(s.b_dip .≈ 90) || @warn "Segment magnetic field is not vertical"
     length(unique(s.b_mag)) == 1 || @warn "Magnetic field is not homogeneous"
@@ -249,13 +248,13 @@ function buildandrun(s::LWMS.BasicInput, walltime::String)
 
     inputs = Inputs(LWMS.EARTH_RADIUS, 110e3, 50e3, 100, 500, 250, max_range, drange, [s.frequency])
     r, dr = generate_rdr(inputs)
-    altitudes = (r - LWMS.EARTH_RADIUS)
+    altitudes = r .- LWMS.EARTH_RADIUS
 
     # Fill in values for each waveguide segment
     ne = Matrix{Float64}(undef, length(r), Nrange)
     nu = similar(ne)
     gsigma = Vector{Float64}(undef, Nrange)
-    gepsilon = similar(gsigma)
+    gepsilon = Vector{Int}(undef, Nrange)
 
     for i in eachindex(s.segment_ranges)
         segment_begin_idx = findfirst(x->x==s.segment_ranges[i], rangevec)
@@ -273,35 +272,36 @@ function buildandrun(s::LWMS.BasicInput, walltime::String)
 
         # Electron collision profile
         nuprofile = LWMS.electroncollisionfrequency.(altitudes)
-        nu[:,segment_begin_idx,segment_end_idx] .= nuprofile
+        nu[:,segment_begin_idx:segment_end_idx] .= nuprofile
 
         # Ground profile
-        gsigma[segment_begin_idx,segment_end_idx] .= s.sigmas[i]
-        gepsilon[segment_begin_idx,segment_end_idx] .= s.epsr[i]
+        gsigma[segment_begin_idx:segment_end_idx] .= s.ground_sigmas[i]
+        gepsilon[segment_begin_idx:segment_end_idx] .= s.ground_epsr[i]
     end
 
     source = Source(inputs)
-    ground = Ground(gsigma, gepsilon)
+    ground = Ground()
+    ground.gsigma = gsigma
+    ground.gepsilon = gepsilon
 
-    writeinputs(inputs, path)
-    writesource(source, path)
-    writeground(ground, path)
-    writebfield(s.b_mag[1], inputs, path)
-    writene(ne, path)
-    writeni(ne, path)
-    writenu(nu, path)
+    writeinputs(inputs, path=rundir)
+    writesource(source, path=rundir)
+    writeground(ground, path=rundir)
+    writebfield(s.b_mag[1], inputs, path=rundir)
+    writene(ne, path=rundir)
+    writeni(ne, path=rundir)
+    writenu(nu, path=rundir)
 
     exefile = "/projects/foga6704/emp/emp2/emp2d"
     computejob = Summit(s.name, rundir, 12, walltime, exefile)
-    shfile = writeshfile()
+    shfile = writeshfile(computejob)
 
     run(`cp $exefile $rundir`)
     
-    #==
     jobname = read(`sbatch $shfile`, String)
     jobid = strip(jobname)
 
     println("Job $jobid submitted!\n")
-    ==#
+    
     return nothing
 end
