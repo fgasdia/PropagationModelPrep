@@ -1,3 +1,7 @@
+module EMP2D
+
+export emp2d
+
 #==
 EMP2D STRUCTS
 ==#
@@ -16,7 +20,7 @@ Defaults() = Defaults(20e-6, 50e-6, 10e3, 0, 60000, 5000, -0.75*LWMS.C0)
 """
     Inputs
 
-Fields of `inputs.dat` for `emp2d-slimfork.cpp`
+Fields of `Inputs.dat` for `emp2d-slimfork.cpp`
 """
 mutable struct Inputs
     Re::Float64
@@ -217,7 +221,7 @@ end
 """
     buildandrun()
 
-With default (coarse) inputs.
+With default (coarse) Inputs.
 """
 function buildandrun(s::LWMS.BasicInput, rundir::String, walltime::String)
 
@@ -347,3 +351,5 @@ function generate_rdr(in::Inputs)
     end
     return r, dr
 end
+
+end  # module

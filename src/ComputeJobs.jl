@@ -1,3 +1,16 @@
+abstract type ComputeJob end
+
+"""
+walltime "00:57:00" is 57 minutes
+"""
+struct Summit <: ComputeJob
+    runname::String
+    rundir::String
+    numnodes::Int
+    walltime::String
+    exefile::String
+end
+
 function writeshfile(s::Summit)
 
     runname = s.runname
