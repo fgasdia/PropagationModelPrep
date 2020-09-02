@@ -104,7 +104,7 @@ function writeshfile(s::Summit)
     return shfile
 end
 
-function run(s::LocalOMP, shfile)
+function runjob(s::LocalOMP, shfile)
     jobname = read(`./$shfile`, String)
 
     println(jobname)
@@ -112,7 +112,7 @@ function run(s::LocalOMP, shfile)
     return nothing
 end
 
-function run(s::Summit, shfile)
+function runjob(s::Summit, shfile)
     jobname = read(`sbatch $shfile`, String)
     jobid = strip(jobname)
 

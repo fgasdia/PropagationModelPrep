@@ -214,14 +214,14 @@ end
 MAIN FUNCTIONS
 ==#
 
-function emp2d(file::AbstractString, computejob::ComputeJob; runjob=true)
+function emp2d(file::AbstractString, computejob::ComputeJob; submitjob=true)
     isfile(file) || ispath(file) || error("$file is not a valid file name")
 
     s = LWMS.parse(file)
     shfile = build(s, computejob)
 
-    if runjob
-        run(computejob, shfile)
+    if submitjob
+        runjob(computejob, shfile)
     end
 
     return nothing
