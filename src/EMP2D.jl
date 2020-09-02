@@ -1,5 +1,10 @@
 module EMP2D
 
+using DSP
+
+using ..PropagationModelPrep
+import ..LWMS
+
 export emp2d
 
 #==
@@ -209,11 +214,11 @@ end
 MAIN FUNCTIONS
 ==#
 
-function emp2d(file::AbstractString, rundir::String, walltime::String)
+function emp2d(file::AbstractString, rundir::String, walltime::String; run=true)
     ispath(file) || error("$file is not a valid file name")
 
     s = LWMS.parse(file)
-    buildandrun(s, rundir, walltime)
+    buildandrun(s, rundir, walltime; run=run)
 
     return nothing
 end
@@ -223,7 +228,7 @@ end
 
 With default (coarse) Inputs.
 """
-function buildandrun(s::LWMS.BasicInput, rundir::String, walltime::String)
+function buildandrun(s::LWMS.BasicInput, rundir::String, walltime::String; run=true)
 
     all(s.b_dip .≈ 90) || @warn "Segment magnetic field is not vertical"
     length(unique(s.b_mag)) == 1 || @warn "Magnetic field is not homogeneous"
@@ -289,12 +294,14 @@ function buildandrun(s::LWMS.BasicInput, rundir::String, walltime::String)
     computejob = Summit(s.name, rundir, 12, walltime, exefile)
     shfile = writeshfile(computejob)
 
-    run(`cp $exefile $rundir`)
+    if run
+        run(`cp $exefile $rundir`)
 
-    jobname = read(`sbatch $shfile`, String)
-    jobid = strip(jobname)
+        jobname = read(`sbatch $shfile`, String)
+        jobid = strip(jobname)
 
-    println("Job $jobid submitted!\n")
+        println("Job $jobid submitted!\n")
+    end
 
     return nothing
 end

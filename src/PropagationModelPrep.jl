@@ -1,16 +1,20 @@
 module PropagationModelPrep
 
-using DSP
+using Reexport
+using Interpolations
 
 using LongwaveModeSolver
 const LWMS = LongwaveModeSolver
 
-include("utils.jl")
+include("ComputeJobs.jl")
 include("MSISatmosphere.jl")
+
+export ComputeJob, Summit
+export writeshfile
 
 # Include submodules
 include("EMP2D.jl")
 
-# using .EMP2D   # not sure if this is needed or not...
+@reexport using .EMP2D
 
 end  # module
