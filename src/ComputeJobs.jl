@@ -105,7 +105,7 @@ function writeshfile(s::Summit)
 end
 
 function runjob(s::LocalOMP, shfile)
-    jobname = read(`./$shfile`, String)
+    jobname = read(`$shfile`, String)
 
     println(jobname)
 
