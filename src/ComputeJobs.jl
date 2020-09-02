@@ -4,7 +4,7 @@
 An abstract type for different computer clusters and job managers.
 
 All `ComputeJob`s should have `runname`, `rundir`, and `exefile` fields at a
-minimum. 
+minimum.
 """
 abstract type ComputeJob end
 
@@ -102,4 +102,21 @@ function writeshfile(s::Summit)
     end
 
     return shfile
+end
+
+function run(s::LocalOMP, shfile)
+    jobname = read(`./$shfile`, String)
+
+    println(jobname)
+
+    return nothing
+end
+
+function run(s::Summit, shfile)
+    jobname = read(`sbatch $shfile`, String)
+    jobid = strip(jobname)
+
+    println("Job $jobid submitted!\n")
+
+    return nothing
 end

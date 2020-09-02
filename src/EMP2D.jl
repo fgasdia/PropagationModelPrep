@@ -218,7 +218,11 @@ function emp2d(file::AbstractString, computejob::ComputeJob; runjob=true)
     isfile(file) || ispath(file) || error("$file is not a valid file name")
 
     s = LWMS.parse(file)
-    buildandrun(s, computejob; runjob=runjob)
+    shfile = build(s, computejob)
+
+    if runjob
+        run(computejob, shfile)
+    end
 
     return nothing
 end
@@ -228,7 +232,7 @@ end
 
 With default (coarse) Inputs.
 """
-function buildandrun(s::LWMS.BasicInput, computejob::ComputeJob; runjob=true)
+function build(s::LWMS.BasicInput, computejob::ComputeJob)
 
     all(s.b_dip .≈ 90) || @warn "Segment magnetic field is not vertical"
     length(unique(s.b_mag)) == 1 || @warn "Magnetic field is not homogeneous"
@@ -295,16 +299,9 @@ function buildandrun(s::LWMS.BasicInput, computejob::ComputeJob; runjob=true)
 
     shfile = writeshfile(computejob)
 
-    if runjob
-        run(`cp $exefile $rundir`)
+    run(`cp $exefile $rundir`)
 
-        jobname = read(`sbatch $shfile`, String)
-        jobid = strip(jobname)
-
-        println("Job $jobid submitted!\n")
-    end
-
-    return nothing
+    return shfile
 end
 
 function create_emp_source(def::Defaults, in::Inputs)
