@@ -3,9 +3,6 @@ using DSP
 using LongwaveModeSolver
 const LWMS = LongwaveModeSolver
 
-include("utils.jl")
-include("MSISatmosphere.jl")
-
 abstract type ComputeJob end
 
 """
@@ -143,6 +140,10 @@ mutable struct Ground
     Ground() = new()
 end
 
+include("utils.jl")
+include("MSISatmosphere.jl")
+
+########
 
 function writeinputs(s::Inputs; path="")
     open(joinpath(path,"inputs.dat"), "w") do f
