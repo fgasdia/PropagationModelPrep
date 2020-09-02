@@ -26,33 +26,35 @@ Defaults() = Defaults(20e-6, 50e-6, 10e3, 0, 60000, 5000, -0.75*LWMS.C0)
     Inputs
 
 Fields of `Inputs.dat` for `emp2d-slimfork.cpp`
+
+`int` in C++ generally means 4 bytes (32 bits)
 """
 mutable struct Inputs
     Re::Float64
-    dopml_top::Int
-    dopml_wall::Int
-    doionosphere::Int
-    savefields::Vector{Int}  # always size 6
-    groundmethod::Int
+    dopml_top::Int32
+    dopml_wall::Int32
+    doionosphere::Int32
+    savefields::Vector{Int32}  # always size 6
+    groundmethod::Int32
     maxalt::Float64
     stepalt::Float64
     dr0::Float64
     dr1::Float64
     dr2::Float64
-    nground::Int
+    nground::Int32
     range::Float64
     drange::Float64
     dt::Float64
-    tsteps::Int
+    tsteps::Int32
     sig::Float64
     sigm::Float64
-    numfiles::Int
-    planet::Int
-    decfactor::Int
-    doDFT::Int
-    numDFTfreqs::Int
+    numfiles::Int32
+    planet::Int32
+    decfactor::Int32
+    doDFT::Int32
+    numDFTfreqs::Int32
     DFTfreqs::Vector{Float64}
-    read2Dionosphere::Int
+    read2Dionosphere::Int32
 
     Inputs() = new()
 end
@@ -61,7 +63,7 @@ end
 
 """
 function Inputs(Re, maxalt, stepalt, dr0, dr1, dr2, range, drange, DFTfreqs,
-    dt=1e-7, decfactor=2, savefields=[1, 0, 0, 0, 0, 0])
+    dt=Float64(1e-7), decfactor=Int32(2), savefields=Int32[1, 0, 0, 0, 0, 0])
 
     # decfactor: decimate outputs before writing (for 100m, probably want this to be 4 or 5)
     # savefields = [E J H N/A N/A N/A]
@@ -70,46 +72,46 @@ function Inputs(Re, maxalt, stepalt, dr0, dr1, dr2, range, drange, DFTfreqs,
     s = Inputs()
 
     # Defaults
-    setfield!(s, :dopml_top, 1)
-    setfield!(s, :dopml_wall, 1)
-    setfield!(s, :doionosphere, 1)
-    setfield!(s, :groundmethod, 1)  # SIBC
-    setfield!(s, :nground, 0)
-    setfield!(s, :sig, 0.0)
-    setfield!(s, :sigm, 0.0)
-    setfield!(s, :numfiles, 50) # in part, used to determine log file steps
-    setfield!(s, :planet, 0) # Earth
-    setfield!(s, :doDFT, 1)
-    setfield!(s, :read2Dionosphere, 1)
+    setfield!(s, :dopml_top, Int32(1))
+    setfield!(s, :dopml_wall, Int32(1))
+    setfield!(s, :doionosphere, Int32(1))
+    setfield!(s, :groundmethod, Int32(1))  # SIBC
+    setfield!(s, :nground, Int32(0))
+    setfield!(s, :sig, Float64(0))
+    setfield!(s, :sigm, Float64(0))
+    setfield!(s, :numfiles, Int32(50)) # in part, used to determine log file steps
+    setfield!(s, :planet, Int32(0)) # Earth
+    setfield!(s, :doDFT, Int32(1))
+    setfield!(s, :read2Dionosphere, Int32(1))
 
     # Arguments
-    setfield!(s, :Re, Re)
-    setfield!(s, :maxalt, maxalt)  # usually 110e3 m
-    setfield!(s, :stepalt, stepalt)  # 50e3 m
+    setfield!(s, :Re, convert(Float64, Re))
+    setfield!(s, :maxalt, convert(Float64, maxalt))  # usually 110e3 m
+    setfield!(s, :stepalt, convert(Float64, stepalt))  # 50e3 m
     setfield!(s, :dr0, convert(Float64,dr0))  # 100 m
     setfield!(s, :dr1, convert(Float64, dr1))  # 500 m
     setfield!(s, :dr2, convert(Float64, dr2))  # 250 m
     setfield!(s, :range, convert(Float64, range))  # m
     setfield!(s, :drange, convert(Float64, drange))  # 500 m
-    setfield!(s, :dt, dt)
+    setfield!(s, :dt, convert(Float64, dt))
 
     tstepcoeff = 1.1
     maxdist = sqrt(range^2 + maxalt^2)
-    tsteps = floor(Int, tstepcoeff*maxdist/LWMS.C0/dt)
-    setfield!(s, :tsteps, tsteps)
+    tsteps = floor(Int32, tstepcoeff*maxdist/LWMS.C0/dt)
+    setfield!(s, :tsteps, Int32(tsteps))
 
     length(savefields) == 6 || error("`savefields` must be length 6")
-    setfield!(s, :savefields, savefields)
-    setfield!(s, :decfactor, decfactor)
-    setfield!(s, :numDFTfreqs, length(DFTfreqs))
-    setfield!(s, :DFTfreqs, DFTfreqs)
+    setfield!(s, :savefields, convert(Vector{Int32}, savefields))
+    setfield!(s, :decfactor, Int32(decfactor))
+    setfield!(s, :numDFTfreqs, Int32(length(DFTfreqs)))
+    setfield!(s, :DFTfreqs, convert(Vector{Float64}, DFTfreqs))
 
     return s
 end
 
 mutable struct Source
-    nalt_source::Int
-    nt_source::Int
+    nalt_source::Int32
+    nt_source::Int32
     source::Matrix{Float64}
 
     Source() = new()
@@ -121,16 +123,16 @@ function Source(inputs::Inputs)
     source = create_emp_source(Defaults(), inputs)
     nalt_source, nt_source = size(source)
 
-    setfield!(s, :nalt_source, nalt_source)
-    setfield!(s, :nt_source, nt_source)
-    setfield!(s, :source, source)
+    setfield!(s, :nalt_source, Int32(nalt_source))
+    setfield!(s, :nt_source, Int32(nt_source))
+    setfield!(s, :source, convert(Matrix{Float64}, source))
 
     return s
 end
 
 mutable struct Ground
     gsigma::Vector{Float64}
-    gepsilon::Vector{Int}
+    gepsilon::Vector{Float64}
 
     Ground() = new()
 end
@@ -179,13 +181,13 @@ function writebfield(Bmag, in::Inputs; path="")
     end
 end
 
-function writene(ne; path="")
+function writene(ne::Array{Float64}; path="")
     open(joinpath(path,"ne.dat"), "w") do f
         write(f, ne)
     end
 end
 
-function writeni(ne; path="")
+function writeni(ne::Array{Float64}; path="")
     ni = copy(ne)
     ni[ni .< 100e6] .= 100e6
 
@@ -204,7 +206,7 @@ end
 #     end
 # end
 
-function writenu(nu; path="")
+function writenu(nu::Array{Float64}; path="")
     open(joinpath(path,"nu.dat"), "w") do f
         write(f, nu)
     end
@@ -256,7 +258,7 @@ function build(s::LWMS.BasicInput, computejob::ComputeJob)
     ne = Matrix{Float64}(undef, length(r), Nrange)
     nu = similar(ne)
     gsigma = Vector{Float64}(undef, Nrange)
-    gepsilon = Vector{Int}(undef, Nrange)
+    gepsilon = similar(gsigma)
 
     for i in eachindex(s.segment_ranges)
         segment_begin_idx = findfirst(x->x==s.segment_ranges[i], rangevec)

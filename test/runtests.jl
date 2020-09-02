@@ -52,7 +52,7 @@ generatehomogeneous()
 
 # Read files
 computejob = Summit("homogeneous1", ".", 12, "01:00:00", "/projects/emp/emp2/emp2d")
-emp2d("homogeneous1.json", computejob; runjob=false)
+emp2d("homogeneous1.json", computejob; submitjob=false)
 
 # Run file
 computejob = LocalOMP("homogeneous1", ".", 2, "../emp2d")
