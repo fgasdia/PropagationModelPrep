@@ -215,7 +215,7 @@ MAIN FUNCTIONS
 ==#
 
 function emp2d(file::AbstractString, computejob::ComputeJob; runjob=true)
-    ispath(file) || error("$file is not a valid file name")
+    isfile(file) || ispath(file) || error("$file is not a valid file name")
 
     s = LWMS.parse(file)
     buildandrun(s, computejob; runjob=runjob)
