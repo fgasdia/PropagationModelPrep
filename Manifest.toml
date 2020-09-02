@@ -444,7 +444,9 @@ uuid = "56ddb016-857b-54e1-b83d-db4d58db5568"
 
 [[LongwaveModeSolver]]
 deps = ["BetterExp", "Dates", "DiffEqCallbacks", "DifferentialEquations", "JSON3", "LinearAlgebra", "ModifiedHankelFunctionsOfOrderOneThird", "OrdinaryDiffEq", "Parameters", "PolynomialRoots", "RootsAndPoles", "StaticArrays", "StructTypes", "UUIDs"]
-path = "/home/forrest/dev/LongwaveModeSolver/"
+git-tree-sha1 = "ca32f170f38ae15b93f506056e126cf098f6544c"
+repo-rev = "development"
+repo-url = "https://github.com/fgasdia/LongwaveModeSolver"
 uuid = "38c6559a-e0a7-48c6-827d-3f02e2d19cec"
 version = "0.1.0"
 
