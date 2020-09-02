@@ -1,7 +1,4 @@
-using DSP
 
-using LongwaveModeSolver
-const LWMS = LongwaveModeSolver
 
 abstract type ComputeJob end
 
@@ -297,11 +294,11 @@ function buildandrun(s::LWMS.BasicInput, rundir::String, walltime::String)
     shfile = writeshfile(computejob)
 
     run(`cp $exefile $rundir`)
-    
+
     jobname = read(`sbatch $shfile`, String)
     jobid = strip(jobname)
 
     println("Job $jobid submitted!\n")
-    
+
     return nothing
 end
