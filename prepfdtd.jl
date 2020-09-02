@@ -100,7 +100,7 @@ function Inputs(Re, maxalt, stepalt, dr0, dr1, dr2, range, drange, DFTfreqs,
 
     tstepcoeff = 1.1
     maxdist = sqrt(range^2 + maxalt^2)
-    tsteps = floor(Int, tstepcoeff*maxdist/VACUUM_SPEED_OF_LIGHT/dt)
+    tsteps = floor(Int, tstepcoeff*maxdist/LWMS.C0/dt)
     setfield!(s, :tsteps, tsteps)
 
     length(savefields) == 6 || error("`savefields` must be length 6")
@@ -233,7 +233,7 @@ With default (coarse) inputs.
 """
 function buildandrun(s::LWMS.BasicInput)
 
-    all(s.b_dip .≈ π) || @warn "Segment magnetic field is not vertical"
+    all(s.b_dip .≈ 90) || @warn "Segment magnetic field is not vertical"
     length(unique(s.b_mag)) == 1 || @warn "Magnetic field is not homogeneous"
 
     ne_threshold = 3e9
