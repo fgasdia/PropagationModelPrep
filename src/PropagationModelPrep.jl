@@ -9,7 +9,7 @@ const LWMS = LongwaveModeSolver
 include("ComputeJobs.jl")
 include("MSISatmosphere.jl")
 
-export ComputeJob, Summit
+export ComputeJob, Summit, LocalOMP
 export writeshfile
 
 # Include submodules

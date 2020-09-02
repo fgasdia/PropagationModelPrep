@@ -51,7 +51,12 @@ end
 generatehomogeneous()
 
 # Read files
-emp2d("homogeneous1.json", ".", "01:00:00"; run=false)
+computejob = Summit("homogeneous1", ".", 12, "01:00:00", "/projects/emp/emp2/emp2d")
+emp2d("homogeneous1.json", computejob; runjob=false)
+
+# Run file
+computejob = LocalOMP("homogeneous1", ".", 2, "../emp2d")
+emp2d("homogeneous1.json", computejob)
 
 @testset "PropagationModelPrep" begin
     #

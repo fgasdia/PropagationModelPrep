@@ -214,11 +214,11 @@ end
 MAIN FUNCTIONS
 ==#
 
-function emp2d(file::AbstractString, rundir::String, walltime::String; run=true)
+function emp2d(file::AbstractString, computejob::ComputeJob; runjob=true)
     ispath(file) || error("$file is not a valid file name")
 
     s = LWMS.parse(file)
-    buildandrun(s, rundir, walltime; run=run)
+    buildandrun(s, computejob; runjob=runjob)
 
     return nothing
 end
@@ -228,7 +228,7 @@ end
 
 With default (coarse) Inputs.
 """
-function buildandrun(s::LWMS.BasicInput, rundir::String, walltime::String; run=true)
+function buildandrun(s::LWMS.BasicInput, computejob::ComputeJob; runjob=true)
 
     all(s.b_dip .≈ 90) || @warn "Segment magnetic field is not vertical"
     length(unique(s.b_mag)) == 1 || @warn "Magnetic field is not homogeneous"
@@ -282,6 +282,9 @@ function buildandrun(s::LWMS.BasicInput, rundir::String, walltime::String; run=t
     ground.gsigma = gsigma
     ground.gepsilon = gepsilon
 
+    rundir = computejob.rundir
+    exefile = computejob.exefile
+
     writeinputs(inputs, path=rundir)
     writesource(source, path=rundir)
     writeground(ground, path=rundir)
@@ -290,11 +293,9 @@ function buildandrun(s::LWMS.BasicInput, rundir::String, walltime::String; run=t
     writeni(ne, path=rundir)
     writenu(nu, path=rundir)
 
-    exefile = "/projects/foga6704/emp/emp2/emp2d"
-    computejob = Summit(s.name, rundir, 12, walltime, exefile)
     shfile = writeshfile(computejob)
 
-    if run
+    if runjob
         run(`cp $exefile $rundir`)
 
         jobname = read(`sbatch $shfile`, String)
