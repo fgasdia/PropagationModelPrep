@@ -217,11 +217,11 @@ function writenu(nu; path="")
     end
 end
 
-function fdtd(file::AbstractString)
+function fdtd(file::AbstractString, walltime::String)
     ispath(file) || error("$file is not a valid file name")
 
     s = LWMS.parse(file)
-    buildandrun(s)
+    buildandrun(s, walltime)
 
     return nothing
 end
@@ -231,7 +231,7 @@ end
 
 With default (coarse) inputs.
 """
-function buildandrun(s::LWMS.BasicInput)
+function buildandrun(s::LWMS.BasicInput, walltime::String)
 
     all(s.b_dip .≈ 90) || @warn "Segment magnetic field is not vertical"
     length(unique(s.b_mag)) == 1 || @warn "Magnetic field is not homogeneous"

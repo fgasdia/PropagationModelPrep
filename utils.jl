@@ -34,7 +34,7 @@ function create_emp_source(def::Defaults, in::Inputs)
 end
 
 function generate_rdr(in::Inputs)
-    rr = in.stepalt/in.dr1 + (in.maxalt - in.stepalt)/in.dr2 + 1
+    rr = convert(Int, in.stepalt/in.dr1 + (in.maxalt - in.stepalt)/in.dr2 + 1)
 
     r = Vector{Float64}(undef, rr)
     dr = Vector{Float64}(undef, rr-1)
