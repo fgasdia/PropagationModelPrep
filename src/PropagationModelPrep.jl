@@ -10,7 +10,7 @@ include("ComputeJobs.jl")
 include("MSISatmosphere.jl")
 
 export ComputeJob, Summit, LocalOMP
-export writeshfile
+export writeshfile, run
 
 # Include submodules
 include("EMP2D.jl")
