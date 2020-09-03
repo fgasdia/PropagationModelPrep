@@ -218,6 +218,10 @@ MAIN FUNCTIONS
 
 function emp2d(file::AbstractString, computejob::ComputeJob; submitjob=true)
     isfile(file) || error("$file is not a valid file name")
+    splitdir(computejob.rundir)[2] == computejob.runname || @warn "rundir and runname are not consistent"
+
+    # Create rundir if it doesn't already exist
+    isdir(computejob.rundir) || mkpath(computejob.rundir)
 
     s = LWMS.parse(file)
     shfile = build(s, computejob)
