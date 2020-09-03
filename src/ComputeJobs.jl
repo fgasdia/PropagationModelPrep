@@ -28,7 +28,6 @@ end
 
 
 function writeshfile(s::LocalOMP)
-
     runname = s.runname
     rundir = s.rundir
     numnodes = s.numnodes
@@ -39,7 +38,7 @@ function writeshfile(s::LocalOMP)
     endline = "\n"
 
     open(shfile, "w") do f
-        write(f, "#!/bin/sh\n", endline)
+        write(f, "#!/bin/sh", endline)
         write(f, endline)
         write(f, "rm -f $rundir/output_K.dat", endline)
         write(f, "rm -f $rundir/output_E.dat", endline)
@@ -62,7 +61,6 @@ function writeshfile(s::LocalOMP)
 end
 
 function writeshfile(s::Summit)
-
     runname = s.runname
     rundir = s.rundir
     numnodes = s.numnodes
@@ -74,7 +72,7 @@ function writeshfile(s::Summit)
     endline = "\n"
 
     open(shfile, "w") do f
-        write(f, "#!/bin/sh\n", endline)
+        write(f, "#!/bin/sh", endline)
         write(f, "#SBATCH --job-name=$runname", endline)
         write(f, "#SBATCH --partition=shas", endline)
         write(f, "#SBATCH --nodes=1", endline)

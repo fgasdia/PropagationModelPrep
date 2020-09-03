@@ -117,7 +117,6 @@ mutable struct Source
     Source() = new()
 end
 
-# TODO: check permute of source
 function Source(inputs::Inputs)
     s = Source()
 
