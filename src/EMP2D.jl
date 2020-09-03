@@ -112,11 +112,12 @@ end
 mutable struct Source
     nalt_source::Int32
     nt_source::Int32
-    source::Matrix{Float64}
+    source::Vector{Float64}
 
     Source() = new()
 end
 
+# TODO: check permute of source
 function Source(inputs::Inputs)
     s = Source()
 
@@ -125,7 +126,7 @@ function Source(inputs::Inputs)
 
     setfield!(s, :nalt_source, Int32(nalt_source))
     setfield!(s, :nt_source, Int32(nt_source))
-    setfield!(s, :source, convert(Matrix{Float64}, source))
+    setfield!(s, :source, convert(Vector{Float64}, vec(source)))
 
     return s
 end
@@ -217,7 +218,7 @@ MAIN FUNCTIONS
 ==#
 
 function emp2d(file::AbstractString, computejob::ComputeJob; submitjob=true)
-    isfile(file) || ispath(file) || error("$file is not a valid file name")
+    isfile(file) || error("$file is not a valid file name")
 
     s = LWMS.parse(file)
     shfile = build(s, computejob)
