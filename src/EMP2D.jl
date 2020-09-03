@@ -112,7 +112,7 @@ end
 mutable struct Source
     nalt_source::Int32
     nt_source::Int32
-    source::Vector{Float64}
+    source::Matrix{Float64}
 
     Source() = new()
 end
@@ -126,7 +126,7 @@ function Source(inputs::Inputs)
 
     setfield!(s, :nalt_source, Int32(nalt_source))
     setfield!(s, :nt_source, Int32(nt_source))
-    setfield!(s, :source, convert(Vector{Float64}, vec(source)))
+    setfield!(s, :source, convert(Matrix{Float64}, source))
 
     return s
 end
