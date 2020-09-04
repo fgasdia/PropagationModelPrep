@@ -3,6 +3,12 @@
 
 An abstract type for different computer clusters and job managers.
 
+`runname` does not need to be set because it will be automatically overwritten
+by the JSON file name.
+
+If `rundir` path does not end in a directory with the same name as `runname`,
+such a directory will be created.
+
 All `ComputeJob`s should have `runname`, `rundir`, and `exefile` fields at a
 minimum.
 """

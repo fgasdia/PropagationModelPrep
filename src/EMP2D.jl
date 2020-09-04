@@ -7,10 +7,13 @@ import ..LWMS
 
 export emp2d
 
-#==
-EMP2D STRUCTS
-==#
+"""
+    Defaults
 
+Struct to hold some default values for EMP2D. Instantiated as `Defaults()`.
+
+Currently this only holds values related to the emp source.
+"""
 struct Defaults
     taur::Float64
     tauf::Float64
@@ -25,9 +28,7 @@ Defaults() = Defaults(20e-6, 50e-6, 10e3, 0, 60000, 5000, -0.75*LWMS.C0)
 """
     Inputs
 
-Fields of `Inputs.dat` for `emp2d-slimfork.cpp`
-
-`int` in C++ generally means 4 bytes (32 bits)
+Mutable struct that holds fields of `Inputs.dat` for `emp2d-slimfork.cpp`.
 """
 mutable struct Inputs
     Re::Float64
@@ -60,9 +61,36 @@ mutable struct Inputs
 end
 
 """
+    Inputs(Re, maxalt, stepalt, dr1, dr2, range, drange, DFTfreqs,
+        dt=1e-7, decfactor=2, savefields=[0, 0, 0, 0, 0, 0])
 
+Outer constructor for the `Inputs` mutable struct.
+
+This constructor fills in default values for the additional fields that are not
+arguments of this function. All arguments will be `convert`ed to the appropriate
+type as necessary.
+
+Arguments:
+
+    - `Re` is Earth radius
+    - `maxalt` is altitude of top of ionosphere (typically 110e3)
+    - `stepalt` is altitude of change of grid resolution (typically 50e3)
+    - `dr1` is ionosphere grid cell resolution below `stepalt` (typically 500)
+    - `dr2` is ionosphere grid cell resolution above `stepalt` (typically 250)
+    - `range` is the maximum horizontal ground range to run the simulation to
+    - `drange` is the grid cell resolution along the range direction (typically 500)
+    - `DFTfreqs` is a vector of frequencies to examine
+    - `dt=1e-7` is the timestep
+    - `decfactor=2` is the decimation factor for output fields. Larger values
+        are greater decimation
+    - `savefields=[0, 0, 0, 0, 0, 0]` turns on output for E, J, and H when any
+        entry is greater than 0. The last 3 fields are not supported.
+
+!!! note
+
+    All units are SI (mks).
 """
-function Inputs(Re, maxalt, stepalt, dr0, dr1, dr2, range, drange, DFTfreqs,
+function Inputs(Re, maxalt, stepalt, dr1, dr2, range, drange, DFTfreqs,
     dt=Float64(1e-7), decfactor=Int32(2), savefields=Int32[1, 0, 0, 0, 0, 0])
 
     # decfactor: decimate outputs before writing (for 100m, probably want this to be 4 or 5)
@@ -76,6 +104,7 @@ function Inputs(Re, maxalt, stepalt, dr0, dr1, dr2, range, drange, DFTfreqs,
     setfield!(s, :dopml_wall, Int32(1))
     setfield!(s, :doionosphere, Int32(1))
     setfield!(s, :groundmethod, Int32(1))  # SIBC
+    setfield!(s, :dr0, Float64(100))  # not actually used b/c nground = 0
     setfield!(s, :nground, Int32(0))
     setfield!(s, :sig, Float64(0))
     setfield!(s, :sigm, Float64(0))
@@ -101,6 +130,10 @@ function Inputs(Re, maxalt, stepalt, dr0, dr1, dr2, range, drange, DFTfreqs,
     setfield!(s, :tsteps, Int32(tsteps))
 
     length(savefields) == 6 || error("`savefields` must be length 6")
+    if any(x->x>0, savefields[4:6])
+        @info "Setting `savefields[4:6]` to 0"
+        savefields[4:6] .= 0
+    end
     setfield!(s, :savefields, convert(Vector{Int32}, savefields))
     setfield!(s, :decfactor, Int32(decfactor))
     setfield!(s, :numDFTfreqs, Int32(length(DFTfreqs)))
@@ -109,6 +142,11 @@ function Inputs(Re, maxalt, stepalt, dr0, dr1, dr2, range, drange, DFTfreqs,
     return s
 end
 
+"""
+    Source
+
+Mutable struct for the source.dat input to emp2d-slimfork.cpp.
+"""
 mutable struct Source
     nalt_source::Int32
     nt_source::Int32
@@ -117,6 +155,12 @@ mutable struct Source
     Source() = new()
 end
 
+"""
+    Source(inputs::Inputs)
+
+Outer constructor for the `Source` struct. This will automatically generate an
+emp source suitable for emp2d given an `Inputs` struct.
+"""
 function Source(inputs::Inputs)
     s = Source()
 
@@ -130,6 +174,11 @@ function Source(inputs::Inputs)
     return s
 end
 
+"""
+    Ground
+
+Mutable struct to hold ground parameters for emp2d.
+"""
 mutable struct Ground
     gsigma::Vector{Float64}
     gepsilon::Vector{Float64}
@@ -137,10 +186,13 @@ mutable struct Ground
     Ground() = new()
 end
 
-#==
-FUNCTIONS TO WRITE FILES
-==#
+########
 
+"""
+    writeinputs(s::Inputs; path="")
+
+Write inputs.dat at `path` given `s`.
+"""
 function writeinputs(s::Inputs; path="")
     open(joinpath(path,"inputs.dat"), "w") do f
         for field in fieldnames(Inputs)
@@ -149,6 +201,11 @@ function writeinputs(s::Inputs; path="")
     end
 end
 
+"""
+    writesource(s::Source; path="")
+
+Write source.dat at `path` given `s`.
+"""
 function writesource(s::Source; path="")
     open(joinpath(path,"source.dat"), "w") do f
         for field in fieldnames(Source)
@@ -157,6 +214,11 @@ function writesource(s::Source; path="")
     end
 end
 
+"""
+    writeground(s::Ground; path="")
+
+Write ground.dat at `path` given `s`.
+"""
 function writeground(s::Ground; path="")
     open(joinpath(path,"ground.dat"), "w") do f
         for field in fieldnames(Ground)
@@ -165,6 +227,13 @@ function writeground(s::Ground; path="")
     end
 end
 
+"""
+    writebfield(Bmag, in::Inputs; path="")
+
+Write B0.dat at `path` given magnetic field magnitude `Bmag` and `in`.
+
+`emp2d-slimfork.cpp` only supports vertically oriented magnetic fields.
+"""
 function writebfield(Bmag, in::Inputs; path="")
     thmax = in.range/in.Re
     dth = in.drange/in.Re
@@ -181,14 +250,30 @@ function writebfield(Bmag, in::Inputs; path="")
     end
 end
 
+"""
+    writene(ne::Array{Float64}; path="")
+
+Write ne.dat at `path` given electron density array `ne`.
+
+`ne` will typically be a two-dimensional array of size (altitude grid cells,
+range grid cells). It can also be flattened vector of the same length.
+"""
 function writene(ne::Array{Float64}; path="")
     open(joinpath(path,"ne.dat"), "w") do f
         write(f, ne)
     end
 end
 
-function writeni(ne::Array{Float64}; path="")
-    ni = copy(ne)
+"""
+    writeni(ni::Array{Float64}; path="")
+
+Write ni.dat at `path` given ion density array `ni`. `ni` will typically be the
+same as `ne`.
+
+`ni` will typically be a two-dimensional array of size (altitude grid cells,
+range grid cells). It can also be flattened vector of the same length.
+"""
+function writeni(ni::Array{Float64}; path="")
     ni[ni .< 100e6] .= 100e6
 
     open(joinpath(path,"ni.dat"), "w") do f
@@ -206,24 +291,54 @@ end
 #     end
 # end
 
+"""
+    writenu(nu::Array{Float64}; path="")
+
+Write nu.dat at `path` given electron collision frequency array `nu`.
+
+Ion collision frequency is calculated as `nu/100` in `emp2d-slimfork.cpp`.
+
+`nu` will typically be a two-dimensional array of size (altitude grid cells,
+range grid cells). It can also be flattened vector of the same length.
+"""
 function writenu(nu::Array{Float64}; path="")
     open(joinpath(path,"nu.dat"), "w") do f
         write(f, nu)
     end
 end
 
-#==
-MAIN FUNCTIONS
-==#
+########
 
+"""
+    emp2d(file::AbstractString, computejob::ComputeJob; submitjob=true)
+
+Generate the input files and attempt to run the emp2d code for the scenario
+described by `file` as `computejob`.
+"""
 function emp2d(file::AbstractString, computejob::ComputeJob; submitjob=true)
     isfile(file) || error("$file is not a valid file name")
-    splitdir(computejob.rundir)[2] == computejob.runname || @warn "rundir and runname are not consistent"
-
-    # Create rundir if it doesn't already exist
-    isdir(computejob.rundir) || mkpath(computejob.rundir)
 
     s = LWMS.parse(file)
+
+    if computejob.runname != s.name
+        @info "Updating computejob runname to $(s.name)"
+        computejob.runname = s.name
+    end
+
+    if splitdir(computejob.rundir)[2] != computejob.runname
+        # Check if computejob rundir path ends with a directory called runname
+        rundir = joinpath(computejob.rundir, computejob.runname)
+        @info "Running in $rundir"
+    else
+        rundir = computejob.rundir
+    end
+
+    if !isdir(rundir)
+        # Create rundir if it doesn't exist
+        @info "Creating $rundir"
+        mkpath(rundir)
+    end
+
     shfile = build(s, computejob)
 
     if submitjob
@@ -233,10 +348,13 @@ function emp2d(file::AbstractString, computejob::ComputeJob; submitjob=true)
     return nothing
 end
 
-"""
-    buildandrun()
+# TODO: A version of build (and emp2d?) that allows passing Inputs
 
-With default (coarse) Inputs.
+"""
+    buildandrun(s::LWMS.BasicInput, computejob::ComputeJob)
+
+This is essentially a "private" function that sets default parameters for emp2d
+and generates the necessary input files.
 """
 function build(s::LWMS.BasicInput, computejob::ComputeJob)
 
@@ -255,7 +373,7 @@ function build(s::LWMS.BasicInput, computejob::ComputeJob)
     rangevec = range(0, max_range, length=Nrange)
 
     inputs = Inputs(LWMS.EARTH_RADIUS, 110e3, 50e3, 100, 500, 250, max_range, drange, [s.frequency])
-    r, dr = generate_rdr(inputs)
+    r, dr = generate_rdr(inputs)  # somewhat confusing: r ≂̸ range, it is height
     altitudes = r .- LWMS.EARTH_RADIUS
 
     # Fill in values for each waveguide segment
@@ -310,6 +428,13 @@ function build(s::LWMS.BasicInput, computejob::ComputeJob)
     return shfile
 end
 
+"""
+    create_emp_source(def::Defaults, in::Inputs)
+
+Create a standard emp source as a current waveform with linear rise and exponential
+decay, which is then filtered with a lowpass filter according to the parameters in
+`def`.
+"""
 function create_emp_source(def::Defaults, in::Inputs)
     Iin = zeros(in.tsteps)
 
@@ -345,6 +470,12 @@ function create_emp_source(def::Defaults, in::Inputs)
     return source
 end
 
+"""
+    generate_rdr(in::Inputs)
+
+Create the `r` and `dr` vectors for the radial grids which extend along the
+altitude direction beginning at `in.Re` and extending up until `in.maxalt`.
+"""
 function generate_rdr(in::Inputs)
     rr = convert(Int, in.stepalt/in.dr1 + (in.maxalt - in.stepalt)/in.dr2 + 1)
 
