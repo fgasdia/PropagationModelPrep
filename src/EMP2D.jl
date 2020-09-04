@@ -351,6 +351,7 @@ function emp2d(file::AbstractString, computejob::ComputeJob; inputs=nothing, sub
     shfile = build(s, computejob, inputs)
 
     if submitjob
+        run(`cp $exefile $rundir`)
         runjob(computejob, shfile)
     end
 
@@ -425,8 +426,6 @@ function build(s::LWMS.BasicInput, computejob::ComputeJob, inputs::Inputs)
     writenu(nu, path=rundir)
 
     shfile = writeshfile(computejob)
-
-    run(`cp $exefile $rundir`)
 
     return shfile
 end
