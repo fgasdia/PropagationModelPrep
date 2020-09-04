@@ -51,13 +51,43 @@ end
 generatehomogeneous()
 
 # Read files
-computejob = Summit("homogeneous1", ".", 12, "01:00:00", "/projects/emp/emp2/emp2d")
-emp2d("homogeneous1.json", computejob; submitjob=false)
+computejob = Summit("homogeneous1", "homogeneous1", 12, "01:00:00", "dummy_exe")
+inputs = EMP2D.Inputs(6366e3, 110e3, 50e3, 200, 100, 4000e3, 100, [24e3])
+emp2d("homogeneous1.json", computejob; inputs=inputs, submitjob=false)
 
 # Run file
-computejob = LocalOMP("homogeneous1", ".", 2, "../emp2d")
-emp2d("homogeneous1.json", computejob)
+computejob = LocalOMP("homogeneous1", "homogeneous1", 2, "dummy_exe")
+emp2d("homogeneous1.json", computejob; submitjob=false)
+
+function test_mismatchedrunnames()
+    computejob = Summit("homogeneous2", "homogeneous1", 12, "01:00:00", "dummy_exe")
+    emp2d("homogeneous1.json", computejob; submitjob=false)
+end
+
+function test_newrundir()
+    computejob = Summit("homogeneous1", "homogeneous2", 12, "01:00:00", "dummy_exe")
+    emp2d("homogeneous1.json", computejob; submitjob=false)
+end
+
+
+function delete_tmpdirs()
+    rm("homogeneous1", force=true, recursive=true)
+    rm("homogeneous2", force=true, recursive=true)
+end
+
+function test_filename_error()
+    computejob = Summit("homogeneous1", "homogeneous1", 12, "01:00:00", "dummy_exe")
+    emp2d("homogeneous999.json", computejob; submitjob=false)
+end
 
 @testset "PropagationModelPrep" begin
-    #
+    @test_logs (:info,
+        "Updating computejob runname to homogeneous1") test_mismatchedrunnames()
+    @test_logs (:info,
+        "Running in homogeneous2/homogeneous1") (:info,
+        "Creating homogeneous2/homogeneous1") test_newrundir()
+    @test_throws ErrorException test_filename_error()
+
+    # Cleanup
+    delete_tmpdirs()
 end

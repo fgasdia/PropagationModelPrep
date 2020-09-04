@@ -17,7 +17,7 @@ abstract type ComputeJob end
 """
 walltime "00:57:00" is 57 minutes
 """
-struct Summit <: ComputeJob
+mutable struct Summit <: ComputeJob
     runname::String
     rundir::String
     numnodes::Int
@@ -25,7 +25,7 @@ struct Summit <: ComputeJob
     exefile::String
 end
 
-struct LocalOMP <: ComputeJob
+mutable struct LocalOMP <: ComputeJob
     runname::String
     rundir::String
     numnodes::Int

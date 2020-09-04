@@ -117,7 +117,6 @@ function Inputs(Re, maxalt, stepalt, dr1, dr2, range, drange, DFTfreqs,
     setfield!(s, :Re, convert(Float64, Re))
     setfield!(s, :maxalt, convert(Float64, maxalt))  # usually 110e3 m
     setfield!(s, :stepalt, convert(Float64, stepalt))  # 50e3 m
-    setfield!(s, :dr0, convert(Float64,dr0))  # 100 m
     setfield!(s, :dr1, convert(Float64, dr1))  # 500 m
     setfield!(s, :dr2, convert(Float64, dr2))  # 250 m
     setfield!(s, :range, convert(Float64, range))  # m
@@ -310,12 +309,14 @@ end
 ########
 
 """
-    emp2d(file::AbstractString, computejob::ComputeJob; submitjob=true)
+    emp2d(file::AbstractString, computejob::ComputeJob, inputs=false; submitjob=true)
 
 Generate the input files and attempt to run the emp2d code for the scenario
 described by `file` as `computejob`.
+
+Optionally provide an inputs::Inputs() struct. Otherwise default values are used.
 """
-function emp2d(file::AbstractString, computejob::ComputeJob; submitjob=true)
+function emp2d(file::AbstractString, computejob::ComputeJob; inputs=nothing, submitjob=true)
     isfile(file) || error("$file is not a valid file name")
 
     s = LWMS.parse(file)
@@ -339,7 +340,15 @@ function emp2d(file::AbstractString, computejob::ComputeJob; submitjob=true)
         mkpath(rundir)
     end
 
-    shfile = build(s, computejob)
+    if isnothing(inputs)
+        max_range = last(s.output_ranges)
+        # round up to nearest thousand km and go 1000 km beyond that
+        max_range = round(max_range+1000e3, digits=-3, RoundUp)
+
+        inputs = Inputs(LWMS.EARTH_RADIUS, 110e3, 50e3, 500, 250, max_range, 500, [s.frequency])
+    end
+
+    shfile = build(s, computejob, inputs)
 
     if submitjob
         runjob(computejob, shfile)
@@ -348,15 +357,13 @@ function emp2d(file::AbstractString, computejob::ComputeJob; submitjob=true)
     return nothing
 end
 
-# TODO: A version of build (and emp2d?) that allows passing Inputs
-
 """
-    buildandrun(s::LWMS.BasicInput, computejob::ComputeJob)
+    buildandrun(s::LWMS.BasicInput, computejob::ComputeJob, inputs::Inputs)
 
 This is essentially a "private" function that sets default parameters for emp2d
 and generates the necessary input files.
 """
-function build(s::LWMS.BasicInput, computejob::ComputeJob)
+function build(s::LWMS.BasicInput, computejob::ComputeJob, inputs::Inputs)
 
     all(s.b_dip .≈ 90) || @warn "Segment magnetic field is not vertical"
     length(unique(s.b_mag)) == 1 || @warn "Magnetic field is not homogeneous"
@@ -364,15 +371,11 @@ function build(s::LWMS.BasicInput, computejob::ComputeJob)
     ne_threshold = 3e9
 
     # Useful values
-    max_range = last(s.output_ranges)
-    # round up to nearest thousand km and go 1000 km beyond that
-    max_range = round(max_range+1000e3, digits=-3, RoundUp)
-
-    drange = 500  # m
+    max_range = inputs.range
+    drange = inputs.drange
     Nrange = round(Int, max_range/drange) + 1
     rangevec = range(0, max_range, length=Nrange)
 
-    inputs = Inputs(LWMS.EARTH_RADIUS, 110e3, 50e3, 100, 500, 250, max_range, drange, [s.frequency])
     r, dr = generate_rdr(inputs)  # somewhat confusing: r ≂̸ range, it is height
     altitudes = r .- LWMS.EARTH_RADIUS
 
