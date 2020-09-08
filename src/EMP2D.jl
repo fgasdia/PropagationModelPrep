@@ -390,9 +390,9 @@ function emp2d(file::AbstractString, computejob::ComputeJob; inputs=nothing, sub
     end
 
     if isnothing(inputs)
-        max_range = last(s.output_ranges)
+        max_range = maximum(s.output_ranges)
         # round up to nearest thousand km and go 1000 km beyond that
-        max_range = round(max_range+1000e3, digits=-3, RoundUp)
+        max_range = round(max_range+1000e3, digits=-6, RoundUp)
 
         inputs = Inputs(LWMS.EARTH_RADIUS, 110e3, 50e3, 500, 250, max_range, 500, [s.frequency])
     end
