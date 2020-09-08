@@ -355,6 +355,7 @@ function emp2d(file::AbstractString, computejob::ComputeJob; inputs=nothing, sub
     shfile = build(s, computejob, inputs)
 
     if submitjob
+        exefile = computejob.exefile
         run(`cp $exefile $rundir`)
         runjob(computejob, shfile)
     end
@@ -416,7 +417,6 @@ function build(s::LWMS.BasicInput, computejob::ComputeJob, inputs::Inputs)
     ground.gepsilon = gepsilon
 
     rundir = computejob.rundir
-    exefile = computejob.exefile
 
     writeinputs(inputs, path=rundir)
     writesource(source, path=rundir)
