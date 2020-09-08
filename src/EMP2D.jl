@@ -240,11 +240,7 @@ Write inputs.dat at `path` given `s`.
 function writeinputs(s::Inputs; path="")
     open(joinpath(path,"inputs.dat"), "w") do f
         for field in fieldnames(Inputs)
-            try
-                write(f, getfield(s, field))
-            catch
-                println(field)
-            end
+            write(f, getfield(s, field))
         end
     end
 end
