@@ -117,10 +117,14 @@ function runjob(s::LocalOMP, shfile)
 end
 
 function runjob(s::Summit, shfile)
-    jobname = read(`sbatch $shfile`, String)
-    jobid = strip(jobname)
+    # jobname = read(`sbatch $shfile`, String)
+    # jobid = strip(jobname)
 
-    println("Job $jobid submitted!\n")
+    # println("Job $jobid submitted!\n")
+
+    # TEMP: Running Julia from inside Singularity isn't allowing this command
+    println("Please run the command:")
+    println("sbatch $shfile")
 
     return nothing
 end
