@@ -35,6 +35,10 @@ mutable struct Inputs
     dopml_top::Int32
     dopml_wall::Int32
     doionosphere::Int32
+    doioniz::Int32
+    doelve::Int32
+    dodetach::Int32
+    dotransmitter::Int32
     savefields::Vector{Int32}  # always size 6
     groundmethod::Int32
     maxalt::Float64
@@ -49,9 +53,20 @@ mutable struct Inputs
     tsteps::Int32
     sig::Float64
     sigm::Float64
+    camdist::Float64
+    camalt::Float64
+    elvesteps::Int32
     numfiles::Int32
     planet::Int32
     decfactor::Int32
+    nprobes::Int32
+    prober::Vector{Int32}
+    probet::Vector{Int32}
+    dogwave::Int32
+    gwavemag::Float64
+    gwavemaxalt::Float64
+    gwavekh::Float64
+    nonlinearstart::Int32
     doDFT::Int32
     numDFTfreqs::Int32
     DFTfreqs::Vector{Float64}
@@ -83,8 +98,8 @@ Arguments:
     - `dt=1e-7` is the timestep
     - `decfactor=2` is the decimation factor for output fields. Larger values
         are greater decimation
-    - `savefields=[0, 0, 0, 0, 0, 0]` turns on output for E, J, and H when any
-        entry is greater than 0. The last 3 fields are not supported.
+    - `savefields=[0, 0, 0, 0, 0, 0]` turns on output for E, J, H, K, and D when
+        an entry is greater than 0. The last field (6) is not supported.
 
 !!! note
 
@@ -100,17 +115,45 @@ function Inputs(Re, maxalt, stepalt, dr1, dr2, range, drange, DFTfreqs,
     s = Inputs()
 
     # Defaults
+    # Re
     setfield!(s, :dopml_top, Int32(1))
     setfield!(s, :dopml_wall, Int32(1))
     setfield!(s, :doionosphere, Int32(1))
+    setfield!(s, :doioniz, Int32(0))
+    setfield!(s, :doelve, Int32(0))
+    setfield!(s, :dodetach, Int32(0))
+    setfield!(s, :dotransmitter, Int32(0))
+    # savefields
     setfield!(s, :groundmethod, Int32(1))  # SIBC
-    setfield!(s, :dr0, Float64(100))  # not actually used b/c nground = 0
+    # maxalt
+    # stepalt
+    setfield!(s, :dr0, Float64(0))  # not actually used b/c nground = 0
+    # dr1
+    # dr2
     setfield!(s, :nground, Int32(0))
+    # range
+    # drange
+    # dt
+    # tsteps
     setfield!(s, :sig, Float64(0))
     setfield!(s, :sigm, Float64(0))
-    setfield!(s, :numfiles, Int32(50)) # in part, used to determine log file steps
+    setfield!(s, :camdist, Float64(0))
+    setfield!(s, :camalt, Float64(0))
+    setfield!(s, :elvesteps, Int32(0))
+    setfield!(s, :numfiles, Int32(50)) # used to determine log file steps
     setfield!(s, :planet, Int32(0)) # Earth
+    # decfactor
+    setfield!(s, :nprobes, Int32(1))
+    setfield!(s, :prober, Int32[0])
+    setfield!(s, :probet, Int32[0])
+    setfield!(s, :dogwave, Int32(0))
+    setfield!(s, :gwavemag, Float64(0))
+    setfield!(s, :gwavemaxalt, Float64(0))
+    setfield!(s, :gwavekh, Float64(0))
+    setfield!(s, :nonlinearstart, Int32(0))
     setfield!(s, :doDFT, Int32(1))
+    # numDFTfreqs
+    # DFTfreqs
     setfield!(s, :read2Dionosphere, Int32(1))
 
     # Arguments
@@ -149,6 +192,7 @@ Mutable struct for the source.dat input to emp2d-slimfork.cpp.
 mutable struct Source
     nalt_source::Int32
     nt_source::Int32
+    halfchlength::Int32
     source::Matrix{Float64}
 
     Source() = new()
@@ -168,6 +212,7 @@ function Source(inputs::Inputs)
 
     setfield!(s, :nalt_source, Int32(nalt_source))
     setfield!(s, :nt_source, Int32(nt_source))
+    setfield!(s, :halfchlength, Int32(0))  # not used by emp2d
     setfield!(s, :source, source)
 
     return s
@@ -195,7 +240,11 @@ Write inputs.dat at `path` given `s`.
 function writeinputs(s::Inputs; path="")
     open(joinpath(path,"inputs.dat"), "w") do f
         for field in fieldnames(Inputs)
-            write(f, getfield(s, field))
+            try
+                write(f, getfield(s, field))
+            catch
+                println(field)
+            end
         end
     end
 end
