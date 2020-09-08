@@ -164,11 +164,11 @@ function Source(inputs::Inputs)
     s = Source()
 
     source = create_emp_source(Defaults(), inputs)
-    nalt_source, nt_source = size(source)
+    nt_source, nalt_source = size(source)
 
     setfield!(s, :nalt_source, Int32(nalt_source))
     setfield!(s, :nt_source, Int32(nt_source))
-    setfield!(s, :source, convert(Matrix{Float64}, source))
+    setfield!(s, :source, source)
 
     return s
 end
@@ -208,7 +208,11 @@ Write source.dat at `path` given `s`.
 function writesource(s::Source; path="")
     open(joinpath(path,"source.dat"), "w") do f
         for field in fieldnames(Source)
-            write(f, getfield(s, field))
+            if field == :source
+                write(f, permutedims(getfield(s, :source)))  # for c++
+            else
+                write(f, getfield(s, field))
+            end
         end
     end
 end
@@ -259,7 +263,7 @@ range grid cells). It can also be flattened vector of the same length.
 """
 function writene(ne::Array{Float64}; path="")
     open(joinpath(path,"ne.dat"), "w") do f
-        write(f, ne)
+        write(f, permutedims(ne))  # for c++
     end
 end
 
@@ -276,7 +280,7 @@ function writeni(ni::Array{Float64}; path="")
     ni[ni .< 100e6] .= 100e6
 
     open(joinpath(path,"ni.dat"), "w") do f
-        write(f, ni)
+        write(f, permutedims(ni))  # for c++
     end
 end
 
@@ -302,7 +306,7 @@ range grid cells). It can also be flattened vector of the same length.
 """
 function writenu(nu::Array{Float64}; path="")
     open(joinpath(path,"nu.dat"), "w") do f
-        write(f, nu)
+        write(f, permutedims(nu))  # for c++
     end
 end
 
@@ -369,8 +373,6 @@ function build(s::LWMS.BasicInput, computejob::ComputeJob, inputs::Inputs)
     all(s.b_dip .≈ 90) || @warn "Segment magnetic field is not vertical"
     length(unique(s.b_mag)) == 1 || @warn "Magnetic field is not homogeneous"
 
-    ne_threshold = 3e9
-
     # Useful values
     max_range = inputs.range
     drange = inputs.drange
@@ -381,7 +383,7 @@ function build(s::LWMS.BasicInput, computejob::ComputeJob, inputs::Inputs)
     altitudes = r .- LWMS.EARTH_RADIUS
 
     # Fill in values for each waveguide segment
-    ne = Matrix{Float64}(undef, length(r), Nrange)
+    ne = Matrix{Float64}(undef, Nrange, length(r))
     nu = similar(ne)
     gsigma = Vector{Float64}(undef, Nrange)
     gepsilon = similar(gsigma)
@@ -397,12 +399,11 @@ function build(s::LWMS.BasicInput, computejob::ComputeJob, inputs::Inputs)
 
         # Electron density profile
         neprofile = LWMS.waitprofile.(altitudes, s.hprimes[i], s.betas[i], cutoff_low=50e3, threshold=3e9)
-        neprofile[neprofile .> ne_threshold] .= ne_threshold
-        ne[:,segment_begin_idx:segment_end_idx] .= neprofile
+        ne[segment_begin_idx:segment_end_idx,:] .= permutedims(neprofile)
 
         # Electron collision profile
         nuprofile = LWMS.electroncollisionfrequency.(altitudes)
-        nu[:,segment_begin_idx:segment_end_idx] .= nuprofile
+        nu[segment_begin_idx:segment_end_idx,:] .= permutedims(nuprofile)
 
         # Ground profile
         gsigma[segment_begin_idx:segment_end_idx] .= s.ground_sigmas[i]
@@ -467,18 +468,19 @@ function create_emp_source(def::Defaults, in::Inputs)
     # Spatial variation
     satop = in.nground + floor(Int, def.sourcealt/in.dr1) + 1
 
-    source = permutedims(repeat(Iin, 1, satop))
+    source = repeat(Iin, 1, satop)
 
     return source
 end
 
 """
-    generate_rdr(in::Inputs)
+    generate_rdr(in)
 
 Create the `r` and `dr` vectors for the radial grids which extend along the
-altitude direction beginning at `in.Re` and extending up until `in.maxalt`.
+altitude direction beginning at `in.Re` and extending up until `in.maxalt` for
+inputs `in`.
 """
-function generate_rdr(in::Inputs)
+function generate_rdr(in)
     rr = convert(Int, in.stepalt/in.dr1 + (in.maxalt - in.stepalt)/in.dr2 + 1)
 
     r = Vector{Float64}(undef, rr)
