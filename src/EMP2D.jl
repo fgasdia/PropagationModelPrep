@@ -382,14 +382,14 @@ function emp2d(file::AbstractString, computejob::ComputeJob; inputs=nothing, sub
     if splitdir(computejob.rundir)[2] != computejob.runname
         # Check if computejob rundir path ends with a directory called runname
         rundir = joinpath(computejob.rundir, computejob.runname)
-        @info "Running in $rundir"
+        @info "Running in $rundir/"
     else
         rundir = computejob.rundir
     end
 
     if !isdir(rundir)
         # Create rundir if it doesn't exist
-        @info "Creating $rundir"
+        @info "Creating $rundir/"
         mkpath(rundir)
     end
 
@@ -433,7 +433,7 @@ function build(s::LWMS.BasicInput, computejob::ComputeJob, inputs::Inputs)
     altitudes = r .- LWMS.EARTH_RADIUS
 
     # Fill in values for each waveguide segment
-    ne = Matrix{Float64}(undef, Nrange, length(r))
+    ne = Matrix{Float64}(undef, length(r), Nrange)
     nu = similar(ne)
     gsigma = Vector{Float64}(undef, Nrange)
     gepsilon = similar(gsigma)
@@ -449,11 +449,11 @@ function build(s::LWMS.BasicInput, computejob::ComputeJob, inputs::Inputs)
 
         # Electron density profile
         neprofile = LWMS.waitprofile.(altitudes, s.hprimes[i], s.betas[i], cutoff_low=50e3, threshold=3e9)
-        ne[segment_begin_idx:segment_end_idx,:] .= permutedims(neprofile)
+        ne[:,segment_begin_idx:segment_end_idx] .= neprofile
 
         # Electron collision profile
         nuprofile = LWMS.electroncollisionfrequency.(altitudes)
-        nu[segment_begin_idx:segment_end_idx,:] .= permutedims(nuprofile)
+        nu[:,segment_begin_idx:segment_end_idx] .= nuprofile
 
         # Ground profile
         gsigma[segment_begin_idx:segment_end_idx] .= s.ground_sigmas[i]
