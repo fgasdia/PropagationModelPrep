@@ -84,8 +84,8 @@ end
     @test_logs (:info,
         "Updating computejob runname to homogeneous1") test_mismatchedrunnames()
     @test_logs (:info,
-        "Running in homogeneous2/homogeneous1") (:info,
-        "Creating homogeneous2/homogeneous1") test_newrundir()
+        "Running in homogeneous2/homogeneous1/") (:info,
+        "Creating homogeneous2/homogeneous1/") test_newrundir()
     @test_throws ErrorException test_filename_error()
 
     # Cleanup
