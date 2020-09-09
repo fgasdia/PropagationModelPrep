@@ -5,8 +5,6 @@ using DSP
 using ..PropagationModelPrep
 import ..LWMS
 
-export emp2d, processemp2d
-
 """
     Defaults
 
@@ -438,7 +436,7 @@ described by `file` as `computejob`.
 
 Optionally provide an inputs::Inputs() struct. Otherwise default values are used.
 """
-function emp2d(file::AbstractString, computejob::ComputeJob; inputs=nothing, submitjob=true)
+function run(file::AbstractString, computejob::ComputeJob; inputs=nothing, submitjob=true)
     isfile(file) || error("$file is not a valid file name")
 
     s = LWMS.parse(file)
@@ -646,7 +644,7 @@ end
 
 Read `inputs.dat` and `dfts.dat` in directory `path` and return a `DFTFields`.
 """
-function processemp2d(path)
+function process(path)
     inputs = readinputs(path)
     r, dr, th = generategrid(inputs)
     rr = length(r)

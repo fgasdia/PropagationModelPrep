@@ -52,16 +52,16 @@ generatehomogeneous()
 
 # Run file
 computejob = LocalOMP("homogeneous1", "homogeneous1", 2, "dummy_exe")
-emp2d("homogeneous1.json", computejob; submitjob=false)
+EMP2D.run("homogeneous1.json", computejob; submitjob=false)
 
 function test_mismatchedrunnames()
     computejob = Summit("homogeneous2", "homogeneous1", 12, "01:00:00", "dummy_exe")
-    emp2d("homogeneous1.json", computejob; submitjob=false)
+    EMP2D.run("homogeneous1.json", computejob; submitjob=false)
 end
 
 function test_newrundir()
     computejob = Summit("homogeneous1", "homogeneous2", 12, "01:00:00", "dummy_exe")
-    emp2d("homogeneous1.json", computejob; submitjob=false)
+    EMP2D.run("homogeneous1.json", computejob; submitjob=false)
 end
 
 
@@ -72,13 +72,13 @@ end
 
 function test_filename_error()
     computejob = Summit("homogeneous1", "homogeneous1", 12, "01:00:00", "dummy_exe")
-    emp2d("homogeneous999.json", computejob; submitjob=false)
+    EMP2D.run("homogeneous999.json", computejob; submitjob=false)
 end
 
 function test_inputs()
     computejob = Summit("homogeneous1", "homogeneous1", 12, "01:00:00", "dummy_exe")
     inputs = EMP2D.Inputs(6366e3, 110e3, 50e3, 200, 100, 4000e3, 100, [24e3])
-    emp2d("homogeneous1.json", computejob; inputs=inputs, submitjob=false)
+    EMP2D.run("homogeneous1.json", computejob; inputs=inputs, submitjob=false)
 
     testinputs = EMP2D.readinputs("homogeneous1")
     for field in fieldnames(EMP2D.Inputs)
