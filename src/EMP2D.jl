@@ -329,16 +329,6 @@ function writeni(ni::Array{Float64}; path="")
     end
 end
 
-# function writend(in::Inputs)
-#     r, dr = generate_rdr(in)
-#     nd = MSISatmosphere((r-in.Re)/1000)
-#     ndt = nd.total*1e6
-#
-#     open("nd.dat", "w") do f
-#         write(f, ndt)
-#     end
-# end
-
 """
     writenu(nu::Array{Float64}; path="")
 
@@ -420,24 +410,26 @@ function build(s::LWMS.BasicInput, computejob::ComputeJob, inputs::Inputs)
     length(unique(s.b_mag)) == 1 || @warn "Magnetic field is not homogeneous"
 
     # Useful values
+    r, dr, th = generategrid(inputs)  # r is along radial direction (height)
+    altitudes = r .- inputs.Re
+
+    rr = length(r)
+    hh = length(th)
+
     max_range = inputs.range
     drange = inputs.drange
-    Nrange = round(Int, max_range/drange) + 1
-    rangevec = range(0, max_range, length=Nrange)
-
-    r, dr = generate_rdr(inputs)  # somewhat confusing: r ≂̸ range, it is height
-    altitudes = r .- LWMS.EARTH_RADIUS
+    rangevec = range(0, max_range, length=hh)
 
     # Fill in values for each waveguide segment
-    ne = Matrix{Float64}(undef, length(r), Nrange)
+    ne = Matrix{Float64}(undef, rr, hh)
     nu = similar(ne)
-    gsigma = Vector{Float64}(undef, Nrange)
+    gsigma = Vector{Float64}(undef, hh)
     gepsilon = similar(gsigma)
 
     for i in eachindex(s.segment_ranges)
         segment_begin_idx = findfirst(x->x==s.segment_ranges[i], rangevec)
         if i == lastindex(s.segment_ranges)
-            segment_end_idx = Nrange
+            segment_end_idx = hh
         else
             segment_end_range = s.segment_ranges[i+1]
             segment_end_idx = findfirst(x->x==segment_end_range, rangevec)
@@ -519,20 +511,30 @@ function create_emp_source(def::Defaults, in::Inputs)
 end
 
 """
-    generate_rdr(in)
+    generategrid(in)
 
-Create the `r` and `dr` vectors for the radial grids which extend along the
-altitude direction beginning at `in.Re` and extending up until `in.maxalt` for
-inputs `in`.
+Calculate `r`, `dr`, and `th` vectors for the radial and theta grids which
+effectively extend along the altitude direction from `in.Re` to `in.maxalt` and
+the propagation direction, respectively.
+
+!!! note
+    `rr` and `hh` can be obtained from `length(r)` and `length(th)`, respectively.
 """
-function generate_rdr(in)
-    rr = convert(Int, in.stepalt/in.dr1 + (in.maxalt - in.stepalt)/in.dr2 + 1)
+function generategrid(in::Inputs)
+    # Set up radial array
+    rr = trunc(Int32, in.stepalt/in.dr1 + (in.maxalt - in.stepalt)/in.dr2 + 1 + in.nground)
 
     r = Vector{Float64}(undef, rr)
     dr = Vector{Float64}(undef, rr-1)
 
-    r[1] = in.Re
-    for i = 2:rr
+    r[1] = in.Re - in.nground*in.dr0
+    if in.nground > 0
+        for i = 2:nground+1
+            r[i] = r[i-1] + in.dr0
+            dr[i-1] = r[i] - r[i-1]
+        end
+    end
+    for i = in.nground+2:rr
         if r[i-1] < (in.Re + in.stepalt)
             r[i] = r[i-1] + in.dr1
         else
@@ -540,7 +542,125 @@ function generate_rdr(in)
         end
         dr[i-1] = r[i] - r[i-1]
     end
-    return r, dr
+
+    # Set up theta array
+    thmax = in.range/in.Re
+    thmax > π && (thmax = π)
+    dth = in.drange / in.Re
+    hh = round(Int32, thmax/dth) + 1
+
+    th = Vector{Float64}(undef, hh)
+    th[1] = 0
+    for i = 2:hh
+        th[i] = th[i-1] + dth
+    end
+
+    return r, dr, th
 end
+
+# struct Phasor{T}  # Float64 or Vector{Float64}
+#     amp::T
+#     phase::T
+# end
+#
+# mutable struct DFTFields{T}
+#     dist::Float64
+#     DFTfreqs::Vector{Float64}
+#     Er::Phasor{T}
+#     Et::Phasor{T}
+#     Ep::Phasor{T}
+#     Hr::Phasor{T}
+#     Ht::Phasor{T}
+#     Hp::Phasor{T}
+#
+#     DFTFields() = new()
+# end
+
+function readinputs(path)
+    inputs = Inputs()
+
+    open(joinpath(path, "inputs.dat")) do f
+        for field in fieldnames(Inputs)
+            if field == :savefields
+                tmp = fieldtype(Inputs, field)(undef, 6)
+                for i = 1:6
+                    v = read(f, eltype(fieldtype(Inputs, field)))
+                    tmp[i] = v
+                end
+                setfield!(inputs, field, tmp)
+            elseif field == :prober
+                nprobes = getfield(inputs, :nprobes)
+                tmp = fieldtype(Inputs, field)(undef, nprobes)
+                for i = 1:nprobes
+                    v = read(f, eltype(fieldtype(Inputs, field)))
+                    tmp[i] = v
+                end
+                setfield!(inputs, field, tmp)
+            elseif field == :probet
+                nprobes = getfield(inputs, :nprobes)
+                tmp = fieldtype(Inputs, field)(undef, nprobes)
+                for i = 1:nprobes
+                    v = read(f, eltype(fieldtype(Inputs, field)))
+                    tmp[i] = v
+                end
+                setfield!(inputs, field, tmp)
+            elseif field == :DFTfreqs
+                numDFTfreqs = getfield(inputs, :numDFTfreqs)
+                tmp = fieldtype(Inputs, field)(undef, numDFTfreqs)
+                for i = 1:numDFTfreqs
+                    v = read(f, eltype(fieldtype(Inputs, field)))
+                    tmp[i] = v
+                end
+                setfield!(inputs, field, tmp)
+            else
+                v = read(f, fieldtype(Inputs, field))
+                setfield!(inputs, field, v)
+            end
+        end
+    end
+
+    return inputs
+end
+
+# function processDFTs(path)
+#     inputs = readinputs(path)
+#     hh =
+#
+#     f = open(joinpath(path, "dft.dat"),"r")
+#
+#     numDFTfreqs = read(f, Int32)
+#     DFTfreqs = Vector{Float64}(undef, numDFTfreqs)
+#     read!(f, DFTfreqs)
+#
+#     Er = Matrix{Float64}(undef, 2*numDFTfreqs, hh)  # BUG: may need to reverse hh and 2*ndft
+#     Et = similar(Er)
+#     Ep = similar(Er)
+#     Hr = similar(Er)
+#     Ht = similar(Er)
+#     Hp = similar(Er)
+#
+#     read!(f, Er)
+#     read!(f, Et)
+#     read!(f, Ep)
+#     read!(f, Hr)
+#     read!(f, Ht)
+#     read!(f, Hp)
+#
+#     close(f)
+#
+#     # TODO: type of DFTFields (vector or not?)
+#     out = DFTFields()
+#     out.dist = th*RE/1000  # TODO don't use km!
+#     out.DFTfreqs = DFTfreqs
+#
+#     for m = 1:numDFTfreqs
+#         for field in (Er, Et, Ep, Hr, Ht, Hp)
+#             tmp = complex(field[2*m-1,:], field[2*m,:])
+#             setfield!(out, field, Phasor(abs(tmp), unwrap(angle(tmp))))
+#         end
+#     end
+#
+#     return out
+# end
 
 end  # module

@@ -6,6 +6,7 @@ using Interpolations
 using LongwaveModeSolver
 const LWMS = LongwaveModeSolver
 
+include("utils.jl")
 include("ComputeJobs.jl")
 include("MSISatmosphere.jl")
 
