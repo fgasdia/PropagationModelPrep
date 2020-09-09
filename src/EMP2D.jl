@@ -4,6 +4,7 @@ using Dates
 using DSP, JSON3
 
 using ..PropagationModelPrep
+using ..PropagationModelPrep: rounduprange, unwrap!
 import ..LWMS
 
 """
@@ -430,14 +431,14 @@ end
 ########
 
 """
-    emp2d(file::AbstractString, computejob::ComputeJob, inputs=false; submitjob=true)
+    run(file, computejob::ComputeJob, inputs=false; submitjob=true)
 
 Generate the input files and attempt to run the emp2d code for the scenario
 described by `file` as `computejob`.
 
 Optionally provide an inputs::Inputs() struct. Otherwise default values are used.
 """
-function run(file::AbstractString, computejob::ComputeJob; inputs=nothing, submitjob=true)
+function run(file, computejob::ComputeJob; inputs=nothing, submitjob=true)
     isfile(file) || error("$file is not a valid file name")
 
     s = LWMS.parse(file)
@@ -463,8 +464,7 @@ function run(file::AbstractString, computejob::ComputeJob; inputs=nothing, submi
 
     if isnothing(inputs)
         max_range = maximum(s.output_ranges)
-        # round up to nearest thousand km and go 1000 km beyond that
-        max_range = round(max_range+1000e3, digits=-6, RoundUp)
+        max_range = rounduprange(max_range)
 
         inputs = Inputs(LWMS.EARTH_RADIUS, 110e3, 50e3, 500, 250, max_range, 500, [s.frequency])
     end
@@ -473,7 +473,7 @@ function run(file::AbstractString, computejob::ComputeJob; inputs=nothing, submi
 
     if submitjob
         exefile = computejob.exefile
-        Base.run(`cp $exefile $rundir`)
+        cp(exefile, rundir)
         runjob(computejob, shfile)
     end
 
@@ -481,7 +481,7 @@ function run(file::AbstractString, computejob::ComputeJob; inputs=nothing, submi
 end
 
 """
-    buildandrun(s::LWMS.BasicInput, computejob::ComputeJob, inputs::Inputs)
+    build(s::LWMS.BasicInput, computejob::ComputeJob, inputs::Inputs)
 
 This is essentially a "private" function that sets default parameters for emp2d
 and generates the necessary input files.
@@ -717,13 +717,28 @@ function process(path)
     k = p[1]*freq_kHz^2 + p[2]*freq_kHz + p[3]  # deg/km²
     phase += k*dist_km*drange_km^2
 
+    # Create output
     fullpath = abspath(path)
     pathname = splitpath(fullpath)[end]  # proxy for filename
 
+    jsonfile = joinpath(fullpath, pathname*".json")
+
+    if !isfile(jsonfile)
+        @info "$jsonfile not found. Assuming run name is $pathname."
+        name = pathname
+        description = "emp2d results"
+        datetime = Dates.now()
+    else
+        s = LWMS.parse(jsonfile)
+        name = s.name
+        description = s.description
+        datetime = s.datetime
+    end
+
     output = LWMS.BasicOutput()
-    output.name = pathname
-    output.description = "emp2d results"
-    output.datetime = Dates.now()
+    output.name = name
+    output.description = description
+    output.datetime = datetime
 
     # Strip last index of each field because they're 0 (and then inf)
     output.output_ranges = round.(dist[1:end-1], digits=3)  # fix floating point
@@ -733,11 +748,107 @@ function process(path)
     # Save output
     json_str = JSON3.write(output)
 
-    open(joinpath(path,pathname*"_emp2d.json"), "w") do f
+    open(joinpath(path,name*"_emp2d.json"), "w") do f
         write(f, json_str)
     end
 
     return output
+end
+
+function writeshfile(s::LocalOMP)
+    runname = s.runname
+    rundir = s.rundir
+    numnodes = s.numnodes
+    exefile = s.exefile
+    exefile = basename(exefile)
+
+    shfile = joinpath(rundir, runname*".sh")
+    endline = "\n"
+
+    open(shfile, "w") do f
+        write(f, "#!/bin/sh", endline)
+        write(f, endline)
+        write(f, "rm -f $rundir/output_K.dat", endline)
+        write(f, "rm -f $rundir/output_E.dat", endline)
+        write(f, "rm -f $rundir/output_D.dat", endline)
+        write(f, "rm -f $rundir/output_H.dat", endline)
+        write(f, "rm -f $rundir/output_J.dat", endline)
+        write(f, "rm -f $rundir/output_T.dat", endline)
+        write(f, "rm -f $rundir/output_O.dat", endline)
+        write(f, "rm -f $rundir/output_S.dat", endline)
+        write(f, "rm -f $rundir/Probe.dat", endline)
+        write(f, "rm -f $rundir/elve.dat", endline)
+        write(f, "rm -f $rundir/sferic.dat", endline)
+        write(f, endline)
+        write(f, "export OMP_NUM_THREADS=$numnodes", endline)
+        write(f, endline)
+        write(f, joinpath(rundir,exefile), endline)
+    end
+
+    return shfile
+end
+
+function writeshfile(s::Summit)
+    runname = s.runname
+    rundir = s.rundir
+    numnodes = s.numnodes
+    walltime = s.walltime
+    exefile = s.exefile
+    exefile = basename(exefile)
+
+    shfile = joinpath(rundir, runname*".sh")
+    endline = "\n"
+
+    open(shfile, "w") do f
+        write(f, "#!/bin/sh", endline)
+        write(f, "#SBATCH --job-name=$runname", endline)
+        write(f, "#SBATCH --partition=shas", endline)
+        write(f, "#SBATCH --nodes=1", endline)
+        write(f, "#SBATCH --ntasks=$numnodes", endline)
+        write(f, "#SBATCH --time=$walltime", endline)
+        write(f, endline)
+        write(f, "rm -f $rundir/output_K.dat", endline)
+        write(f, "rm -f $rundir/output_E.dat", endline)
+        write(f, "rm -f $rundir/output_D.dat", endline)
+        write(f, "rm -f $rundir/output_H.dat", endline)
+        write(f, "rm -f $rundir/output_J.dat", endline)
+        write(f, "rm -f $rundir/output_T.dat", endline)
+        write(f, "rm -f $rundir/output_O.dat", endline)
+        write(f, "rm -f $rundir/output_S.dat", endline)
+        write(f, "rm -f $rundir/Probe.dat", endline)
+        write(f, "rm -f $rundir/elve.dat", endline)
+        write(f, "rm -f $rundir/sferic.dat", endline)
+        write(f, endline)
+        write(f, "module purge", endline)
+        write(f, "module load intel", endline)
+        write(f, endline)
+        write(f, "export OMP_NUM_THREADS=$numnodes", endline)
+        write(f, endline)
+        write(f, joinpath(rundir,exefile), endline)
+    end
+
+    return shfile
+end
+
+function runjob(s::LocalOMP, shfile)
+    jobname = read(`$shfile`, String)
+
+    println(jobname)
+
+    return nothing
+end
+
+function runjob(s::Summit, shfile)
+    # jobname = read(`sbatch $shfile`, String)
+    # jobid = strip(jobname)
+
+    # println("Job $jobid submitted!\n")
+
+    # TEMP: Running Julia from inside Singularity isn't allowing this command
+    println("Please run the command:")
+    println("sbatch $shfile")
+
+    return nothing
 end
 
 end  # module
