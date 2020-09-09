@@ -50,11 +50,6 @@ end
 # Generate files
 generatehomogeneous()
 
-# Read files
-computejob = Summit("homogeneous1", "homogeneous1", 12, "01:00:00", "dummy_exe")
-inputs = EMP2D.Inputs(6366e3, 110e3, 50e3, 200, 100, 4000e3, 100, [24e3])
-emp2d("homogeneous1.json", computejob; inputs=inputs, submitjob=false)
-
 # Run file
 computejob = LocalOMP("homogeneous1", "homogeneous1", 2, "dummy_exe")
 emp2d("homogeneous1.json", computejob; submitjob=false)
@@ -80,7 +75,21 @@ function test_filename_error()
     emp2d("homogeneous999.json", computejob; submitjob=false)
 end
 
+function test_inputs()
+    computejob = Summit("homogeneous1", "homogeneous1", 12, "01:00:00", "dummy_exe")
+    inputs = EMP2D.Inputs(6366e3, 110e3, 50e3, 200, 100, 4000e3, 100, [24e3])
+    emp2d("homogeneous1.json", computejob; inputs=inputs, submitjob=false)
+
+    testinputs = EMP2D.readinputs("homogeneous1")
+    for field in fieldnames(EMP2D.Inputs)
+        getfield(inputs, field) == getfield(testinputs, field) || return false
+    end
+    return true
+end
+
 @testset "PropagationModelPrep" begin
+    @test test_inputs()
+
     @test_logs (:info,
         "Updating computejob runname to homogeneous1") test_mismatchedrunnames()
     @test_logs (:info,

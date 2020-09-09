@@ -5,7 +5,7 @@ using DSP
 using ..PropagationModelPrep
 import ..LWMS
 
-export emp2d
+export emp2d, processemp2d
 
 """
     Defaults
@@ -230,6 +230,37 @@ mutable struct Ground
     Ground() = new()
 end
 
+"""
+    Phasor{T}
+
+Store `amp` and `phase` of a complex value.
+"""
+struct Phasor{T}  # Float64 or Vector{Float64}
+    amp::T
+    phase::T
+end
+
+"""
+    DFTFields{T}
+
+Mutable struct of DFT electromagnetic fields of type `Phasor{T}`, as well as
+distance vector `dist` and frequencies `DFTfreqs`.
+
+Declare a new `DFTFields` of type `T` as `DFTFields(T)`.
+"""
+mutable struct DFTFields{T}
+    dist::Vector{Float64}
+    DFTfreqs::Vector{Float64}
+    Er::Phasor{T}
+    Et::Phasor{T}
+    Ep::Phasor{T}
+    Hr::Phasor{T}
+    Ht::Phasor{T}
+    Hp::Phasor{T}
+
+    DFTFields(T::Type) = new{T}()
+end
+
 ########
 
 """
@@ -243,6 +274,58 @@ function writeinputs(s::Inputs; path="")
             write(f, getfield(s, field))
         end
     end
+end
+
+
+"""
+    readinputs(path)
+
+Read the `inputs.dat` file located in directory `path`.
+"""
+function readinputs(path)
+    inputs = Inputs()
+
+    open(joinpath(path, "inputs.dat")) do f
+        for field in fieldnames(Inputs)
+            if field == :savefields
+                tmp = fieldtype(Inputs, field)(undef, 6)
+                for i = 1:6
+                    v = read(f, eltype(fieldtype(Inputs, field)))
+                    tmp[i] = v
+                end
+                setfield!(inputs, field, tmp)
+            elseif field == :prober
+                nprobes = getfield(inputs, :nprobes)
+                tmp = fieldtype(Inputs, field)(undef, nprobes)
+                for i = 1:nprobes
+                    v = read(f, eltype(fieldtype(Inputs, field)))
+                    tmp[i] = v
+                end
+                setfield!(inputs, field, tmp)
+            elseif field == :probet
+                nprobes = getfield(inputs, :nprobes)
+                tmp = fieldtype(Inputs, field)(undef, nprobes)
+                for i = 1:nprobes
+                    v = read(f, eltype(fieldtype(Inputs, field)))
+                    tmp[i] = v
+                end
+                setfield!(inputs, field, tmp)
+            elseif field == :DFTfreqs
+                numDFTfreqs = getfield(inputs, :numDFTfreqs)
+                tmp = fieldtype(Inputs, field)(undef, numDFTfreqs)
+                for i = 1:numDFTfreqs
+                    v = read(f, eltype(fieldtype(Inputs, field)))
+                    tmp[i] = v
+                end
+                setfield!(inputs, field, tmp)
+            else
+                v = read(f, fieldtype(Inputs, field))
+                setfield!(inputs, field, v)
+            end
+        end
+    end
+
+    return inputs
 end
 
 """
@@ -558,109 +641,51 @@ function generategrid(in::Inputs)
     return r, dr, th
 end
 
-# struct Phasor{T}  # Float64 or Vector{Float64}
-#     amp::T
-#     phase::T
-# end
-#
-# mutable struct DFTFields{T}
-#     dist::Float64
-#     DFTfreqs::Vector{Float64}
-#     Er::Phasor{T}
-#     Et::Phasor{T}
-#     Ep::Phasor{T}
-#     Hr::Phasor{T}
-#     Ht::Phasor{T}
-#     Hp::Phasor{T}
-#
-#     DFTFields() = new()
-# end
+"""
+    processemp2d(path)
 
-function readinputs(path)
-    inputs = Inputs()
+Read `inputs.dat` and `dfts.dat` in directory `path` and return a `DFTFields`.
+"""
+function processemp2d(path)
+    inputs = readinputs(path)
+    r, dr, th = generategrid(inputs)
+    rr = length(r)
+    hh = length(th)
 
-    open(joinpath(path, "inputs.dat")) do f
-        for field in fieldnames(Inputs)
-            if field == :savefields
-                tmp = fieldtype(Inputs, field)(undef, 6)
-                for i = 1:6
-                    v = read(f, eltype(fieldtype(Inputs, field)))
-                    tmp[i] = v
-                end
-                setfield!(inputs, field, tmp)
-            elseif field == :prober
-                nprobes = getfield(inputs, :nprobes)
-                tmp = fieldtype(Inputs, field)(undef, nprobes)
-                for i = 1:nprobes
-                    v = read(f, eltype(fieldtype(Inputs, field)))
-                    tmp[i] = v
-                end
-                setfield!(inputs, field, tmp)
-            elseif field == :probet
-                nprobes = getfield(inputs, :nprobes)
-                tmp = fieldtype(Inputs, field)(undef, nprobes)
-                for i = 1:nprobes
-                    v = read(f, eltype(fieldtype(Inputs, field)))
-                    tmp[i] = v
-                end
-                setfield!(inputs, field, tmp)
-            elseif field == :DFTfreqs
-                numDFTfreqs = getfield(inputs, :numDFTfreqs)
-                tmp = fieldtype(Inputs, field)(undef, numDFTfreqs)
-                for i = 1:numDFTfreqs
-                    v = read(f, eltype(fieldtype(Inputs, field)))
-                    tmp[i] = v
-                end
-                setfield!(inputs, field, tmp)
-            else
-                v = read(f, fieldtype(Inputs, field))
-                setfield!(inputs, field, v)
-            end
+    f = open(joinpath(path, "dft.dat"),"r")
+
+    numDFTfreqs = read(f, Int32)
+    DFTfreqs = Vector{Float64}(undef, numDFTfreqs)
+    read!(f, DFTfreqs)
+
+    Er = Matrix{Float64}(undef, 2*numDFTfreqs, hh)
+    Et = similar(Er)
+    Ep = similar(Er)
+    Hr = similar(Er)
+    Ht = similar(Er)
+    Hp = similar(Er)
+
+    read!(f, Er)
+    read!(f, Et)
+    read!(f, Ep)
+    read!(f, Hr)
+    read!(f, Ht)
+    read!(f, Hp)
+
+    close(f)
+
+    out = DFTFields(Vector{Float64})
+    out.dist = th*inputs.Re
+    out.DFTfreqs = DFTfreqs
+
+    for m = 1:numDFTfreqs
+        for (field, vals) in Dict(:Er=>Er, :Et=>Et, :Ep=>Ep, :Hr=>Hr, :Ht=>Ht, :Hp=>Hp)
+            tmp = complex.(vals[2*m-1,:], vals[2*m,:])
+            setfield!(out, field, Phasor(abs.(tmp), unwrap!(angle.(tmp))))
         end
     end
 
-    return inputs
+    return out
 end
-
-# function processDFTs(path)
-#     inputs = readinputs(path)
-#     hh =
-#
-#     f = open(joinpath(path, "dft.dat"),"r")
-#
-#     numDFTfreqs = read(f, Int32)
-#     DFTfreqs = Vector{Float64}(undef, numDFTfreqs)
-#     read!(f, DFTfreqs)
-#
-#     Er = Matrix{Float64}(undef, 2*numDFTfreqs, hh)  # BUG: may need to reverse hh and 2*ndft
-#     Et = similar(Er)
-#     Ep = similar(Er)
-#     Hr = similar(Er)
-#     Ht = similar(Er)
-#     Hp = similar(Er)
-#
-#     read!(f, Er)
-#     read!(f, Et)
-#     read!(f, Ep)
-#     read!(f, Hr)
-#     read!(f, Ht)
-#     read!(f, Hp)
-#
-#     close(f)
-#
-#     # TODO: type of DFTFields (vector or not?)
-#     out = DFTFields()
-#     out.dist = th*RE/1000  # TODO don't use km!
-#     out.DFTfreqs = DFTfreqs
-#
-#     for m = 1:numDFTfreqs
-#         for field in (Er, Et, Ep, Hr, Ht, Hp)
-#             tmp = complex(field[2*m-1,:], field[2*m,:])
-#             setfield!(out, field, Phasor(abs(tmp), unwrap(angle(tmp))))
-#         end
-#     end
-#
-#     return out
-# end
 
 end  # module
