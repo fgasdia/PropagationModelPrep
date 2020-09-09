@@ -1,6 +1,7 @@
 module EMP2D
 
-using DSP
+using Dates
+using DSP, JSON3
 
 using ..PropagationModelPrep
 import ..LWMS
@@ -640,11 +641,11 @@ function generategrid(in::Inputs)
 end
 
 """
-    processemp2d(path)
+    readdfts(path)
 
 Read `inputs.dat` and `dfts.dat` in directory `path` and return a `DFTFields`.
 """
-function process(path)
+function readdfts(path)
     inputs = readinputs(path)
     r, dr, th = generategrid(inputs)
     rr = length(r)
@@ -684,6 +685,59 @@ function process(path)
     end
 
     return out
+end
+
+"""
+    process(path)
+
+Read `inputs.dat` and `dfts.dat` in directory `path` and return a `LWMS.BasicOutput`
+with amplitude in dB μV/m and phase in degrees corrected for dispersion.
+"""
+function process(path)
+    dfts = readdfts(path)
+    inputs = readinputs(path)
+
+    # TODO: support multiple frequencies
+    length(dfts.DFTfreqs) > 1 && @info "Only using DFTfreq $(out.DFTfreqs[1]) Hz"
+    freq = first(dfts.DFTfreqs)
+    freq_kHz = freq/1e3
+
+    dist = dfts.dist
+    dist_km = dist./1e3
+
+    drange_km = inputs.drange/1e3
+
+    amp = 20*log10.(dfts.Er.amp/1e-6)  # dB μV/m
+    amp .-= maximum(amp)
+
+    phase = rad2deg.(dfts.Er.phase) + (360*freq/LWMS.C0*dist)
+
+    # 2D FDTD numerical dispersion correction
+    p = [0.00136588, -0.026108, 0.154035]
+    k = p[1]*freq_kHz^2 + p[2]*freq_kHz + p[3]  # deg/km²
+    phase += k*dist_km*drange_km^2
+
+    fullpath = abspath(path)
+    pathname = splitpath(fullpath)[end]  # proxy for filename
+
+    output = LWMS.BasicOutput()
+    output.name = pathname
+    output.description = "emp2d results"
+    output.datetime = Dates.now()
+
+    # Strip last index of each field because they're 0 (and then inf)
+    output.output_ranges = round.(dist[1:end-1], digits=3)  # fix floating point
+    output.amplitude = amp[1:end-1]
+    output.phase = phase[1:end-1]
+
+    # Save output
+    json_str = JSON3.write(output)
+
+    open(joinpath(path,pathname*"_emp2d.json"), "w") do f
+        write(f, json_str)
+    end
+
+    return output
 end
 
 end  # module
