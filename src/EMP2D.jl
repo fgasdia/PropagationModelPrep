@@ -473,7 +473,7 @@ function run(file::AbstractString, computejob::ComputeJob; inputs=nothing, submi
 
     if submitjob
         exefile = computejob.exefile
-        run(`cp $exefile $rundir`)
+        Base.run(`cp $exefile $rundir`)
         runjob(computejob, shfile)
     end
 
