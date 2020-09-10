@@ -448,7 +448,9 @@ function run(file, computejob::ComputeJob; inputs=nothing, submitjob=true)
         computejob.runname = s.name
     end
 
-    if splitdir(computejob.rundir)[2] != computejob.runname
+    # Get abspath in case a relpath is provided
+    origrundir = splitpath(abspath(computejob.rundir))[end]
+    if origrundir != computejob.runname
         # Check if computejob rundir path ends with a directory called runname
         rundir = joinpath(computejob.rundir, computejob.runname)
         @info "Running in $rundir/"

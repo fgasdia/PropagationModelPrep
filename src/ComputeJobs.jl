@@ -32,6 +32,12 @@ mutable struct LocalOMP <: ComputeJob
     exefile::String
 end
 
+mutable struct Local <: ComputeJob
+    runname::String
+    rundir::String
+    exefile::String
+end
+
 mutable struct LairLwpc <: ComputeJob
     runname::String
     rundir::String
