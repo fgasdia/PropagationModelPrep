@@ -461,7 +461,7 @@ function run(file, computejob::ComputeJob; inputs=nothing, submitjob=true)
     if !isdir(rundir)
         # Create rundir if it doesn't exist
         @info "Creating $rundir/"
-        mkpath(rundir)
+        mkpath(rundir*"/")
     end
 
     if isnothing(inputs)
