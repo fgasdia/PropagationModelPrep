@@ -452,16 +452,16 @@ function run(file, computejob::ComputeJob; inputs=nothing, submitjob=true)
     origrundir = splitpath(abspath(computejob.rundir))[end]
     if origrundir != computejob.runname
         # Check if computejob rundir path ends with a directory called runname
-        rundir = joinpath(computejob.rundir, computejob.runname)
-        @info "Running in $rundir/"
+        rundir = joinpath(computejob.rundir, computejob.runname)*"/"
+        @info "Running in $rundir"
     else
-        rundir = computejob.rundir
+        rundir = computejob.rundir*"/"
     end
 
     if !isdir(rundir)
         # Create rundir if it doesn't exist
-        @info "Creating $rundir/"
-        mkpath(rundir*"/")
+        @info "Creating $rundir"
+        mkpath(rundir)
     end
 
     if isnothing(inputs)
