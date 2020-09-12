@@ -475,7 +475,7 @@ function run(file, computejob::ComputeJob; inputs=nothing, submitjob=true)
 
     if submitjob
         exefile = computejob.exefile
-        cp(exefile, rundir)
+        cp(exefile, rundir, force=true)
         runjob(computejob, shfile)
     end
 
