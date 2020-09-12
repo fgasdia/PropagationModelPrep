@@ -1,8 +1,7 @@
-function unwrap!(x, period=2π)
-	y = convert(eltype(x), period)
+function unwrap!(x)
 	v = first(x)
-	@inbounds for k = eachindex(x)
-		x[k] = v = v + rem(x[k]-v, y, RoundNearest)
+	@inbounds for k in eachindex(x)
+		x[k] = v = v + rem2pi(x[k]-v, RoundNearest)
 	end
 	return x
 end
