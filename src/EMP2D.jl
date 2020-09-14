@@ -476,7 +476,8 @@ function run(file, computejob::ComputeJob; inputs=nothing, submitjob=true)
     if submitjob
         exefile = computejob.exefile
         exename = splitdir(exefile)[2]
-        cp(exefile, joinpath(rundir, exename))
+        newexefile = joinpath(rundir, exename)
+        isfile(newexefile) || cp(exefile, newexefile)
         runjob(computejob, shfile)
     end
 
