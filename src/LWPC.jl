@@ -195,6 +195,22 @@ function readlog(file)
     deleteat!(amp, delidxs)
     deleteat!(phase, delidxs)
 
+    # If phase gets above 9999 deg in log file, there is no space between amp and phase
+    if count(ismissing.(amp)) != count(ismissing.(phase))
+        for i in eachindex(phase)
+            if ismissing(phase[i])
+                phase[i] = parse(Float64, amp[i][end-9:end])  # phase is 10000.0000
+                amp[i] = parse(Float64, amp[i][1:end-10])
+            end
+        end
+        # Other elements in the same column will also be string type
+        for i in eachindex(amp)
+            if amp[i] isa String
+                amp[i] = parse(Float64, amp[i])
+            end
+        end
+    end
+
     return dist, amp, phase
 end
 
