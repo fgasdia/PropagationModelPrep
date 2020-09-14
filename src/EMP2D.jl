@@ -513,12 +513,13 @@ function build(s::LWMS.BasicInput, computejob::ComputeJob, inputs::Inputs)
     gepsilon = similar(gsigma)
 
     for i in eachindex(s.segment_ranges)
-        segment_begin_idx = findfirst(x->x==s.segment_ranges[i], rangevec)
+        # Find closest match of segment range to rangevec
+        segment_begin_idx = argmin(abs(rangevec .- s.segment_ranges[i]))
         if i == lastindex(s.segment_ranges)
             segment_end_idx = hh
         else
             segment_end_range = s.segment_ranges[i+1]
-            segment_end_idx = findfirst(x->x==segment_end_range, rangevec)
+            segment_end_idx = argmin(abs(rangevec .- segment_end_range))
         end
 
         # Electron density profile
