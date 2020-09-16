@@ -105,16 +105,16 @@ function writeinp(s::LWMS.BasicInput, computejob::ComputeJob)
         write(f, "lwflds", endline)
         write(f, "preseg", endline)
         for i in eachindex(s.segment_ranges)
-            r = trunc(Int, s.segment_ranges[i]/1e3)  # dist in km
+            r = round(Int, s.segment_ranges[i]/1e3)  # dist in km
             b_az = s.b_az[i]  # deg east of north
             b_dip = s.b_dip[i]  # deg from horizontal
             b_mag = s.b_mag[i]*1e4  # XXX: supposedly Tesla, but probably Gauss
             gsigma = s.ground_sigmas[i]
             gepsr = s.ground_epsr[i]
-            beta = s.betas[i]
-            hprime = s.hprimes[i]
+            beta = round(s.betas[i], digits=3)
+            hprime = round(s.hprimes[i], digits=3)
 
-            write(f, " $r,$b_az,$b_dip,$b_mag,-1,$gsigma,$gepsr,-1,$beta,$hprime", endline)
+            write(f, " $r,$b_az,$b_dip,$b_mag,-1,$gsigma,$gepsr,,$beta,$hprime", endline)
         end
         write(f, " 40000", endline)
         write(f, "start", endline)
@@ -132,9 +132,9 @@ function writendx(s::LWMS.BasicInput, computejob::ComputeJob)
     endline = "\n"
     open(joinpath(lwpcpath, "cases", runname*".ndx"), "w") do f
         for i in eachindex(s.segment_ranges)
-            r = s.segment_ranges[i]/1e3  # dist in km
-            beta = s.betas[i]
-            hprime = s.hprimes[i]
+            r = round(Int, s.segment_ranges[i]/1e3)  # dist in km
+            beta = round(s.betas[i], digits=3)
+            hprime = round(s.hprimes[i], digits=3)
 
             write(f, "$r $beta $hprime", endline)
         end
