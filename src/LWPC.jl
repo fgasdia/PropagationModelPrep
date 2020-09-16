@@ -1,6 +1,6 @@
 module LWPC
 
-using JSON3, CSV, DataFrames
+using JSON3, CSV, DataFrames, Printf
 
 using ..PropagationModelPrep
 using ..PropagationModelPrep: rounduprange, unwrap!
@@ -105,16 +105,22 @@ function writeinp(s::LWMS.BasicInput, computejob::ComputeJob)
         write(f, "lwflds", endline)
         write(f, "preseg", endline)
         for i in eachindex(s.segment_ranges)
+            # NOTE: According to LWPC manual, b_mag is Tesla, but it appears to actually
+            # be Gauss. Also, rounded up because exactly 0 is not supported
+
             r = round(Int, s.segment_ranges[i]/1e3)  # dist in km
-            b_az = s.b_az[i]  # deg east of north
-            b_dip = s.b_dip[i]  # deg from horizontal
-            b_mag = s.b_mag[i]*1e4  # XXX: supposedly Tesla, but probably Gauss
-            gsigma = s.ground_sigmas[i]
+            b_az = rad2deg(s.b_az[i])  # deg east of north
+            b_dip = rad2deg(s.b_dip[i])  # deg from horizontal
+            b_mag = round(s.b_mag[i]*1e4, digits=6, RoundUp)
+            gsigma = round(s.ground_sigmas[i], digits=6)
             gepsr = s.ground_epsr[i]
             beta = round(s.betas[i], digits=3)
             hprime = round(s.hprimes[i], digits=3)
 
-            write(f, " $r,$b_az,$b_dip,$b_mag,-1,$gsigma,$gepsr,,$beta,$hprime", endline)
+            preseg_str = @sprintf(" %d,%.1f,%.1f,%.6f,-1,%.6f,%d,,%.3f,%.3f",
+                r, b_az, b_dip, b_mag, gsigma, gepsr, beta, hprime)
+
+            write(f, preseg_str, endline)
         end
         write(f, " 40000", endline)
         write(f, "start", endline)
