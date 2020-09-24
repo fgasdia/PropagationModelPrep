@@ -226,8 +226,8 @@ function process(jsonfile, computejob::ComputeJob)
     rundir = computejob.rundir
 
     if !isfile(jsonfile)
-        @info "$jsonfile not found. Assuming run name is $pathname."
-        name = pathname
+        @info "$jsonfile not found. Assuming run name is $runname."
+        name = runname
         description = "LWPC results"
         datetime = Dates.now()
     else
