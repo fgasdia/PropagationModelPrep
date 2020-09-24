@@ -26,14 +26,15 @@ function run(file, computejob::ComputeJob; submitjob=true)
     end
 
     # Get abspath in case a relpath is provided
-    origrundir = splitpath(abspath(computejob.rundir))[end]
-    if origrundir != computejob.runname
-        # Check if computejob rundir path ends with a directory called runname
-        rundir = joinpath(computejob.rundir, computejob.runname)
-        @info "Running in $rundir/"
-    else
-        rundir = computejob.rundir
-    end
+    # origrundir = splitpath(abspath(computejob.rundir))[end]
+    # if origrundir != computejob.runname
+    #     # Check if computejob rundir path ends with a directory called runname
+    #     rundir = joinpath(computejob.rundir, computejob.runname)
+    #     @info "Running in $rundir/"
+    # else
+    #     rundir = computejob.rundir
+    # end
+    rundir = computejob.rundir
 
     if !isdir(rundir)
         # Create rundir if it doesn't exist
@@ -57,8 +58,6 @@ This is essentially a "private" function that sets default parameters for LWPC
 and generates the necessary input files.
 """
 function build(s::LWMS.BasicInput, computejob::ComputeJob)
-    rundir = computejob.rundir
-
     writeinp(s, computejob)
     writendx(s, computejob)
 
