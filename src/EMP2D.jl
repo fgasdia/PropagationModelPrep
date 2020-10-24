@@ -5,7 +5,7 @@ using DSP, JSON3
 
 using ..PropagationModelPrep
 using ..PropagationModelPrep: rounduprange, unwrap!
-import ..LWMS
+using ..LWMS
 
 """
     Defaults
@@ -485,12 +485,12 @@ function run(file, computejob::ComputeJob; inputs=nothing, submitjob=true)
 end
 
 """
-    build(s::LWMS.BasicInput, computejob::ComputeJob, inputs::Inputs)
+    build(s::BasicInput, computejob::ComputeJob, inputs::Inputs)
 
 This is essentially a "private" function that sets default parameters for emp2d
 and generates the necessary input files.
 """
-function build(s::LWMS.BasicInput, computejob::ComputeJob, inputs::Inputs)
+function build(s::BasicInput, computejob::ComputeJob, inputs::Inputs)
 
     all(s.b_dip .≈ 90) || @warn "Segment magnetic field is not vertical"
     length(unique(s.b_mag)) == 1 || @warn "Magnetic field is not homogeneous"
@@ -695,7 +695,7 @@ end
 """
     process(path)
 
-Read `inputs.dat` and `dfts.dat` in directory `path` and return a `LWMS.BasicOutput`
+Read `inputs.dat` and `dfts.dat` in directory `path` and return a `BasicOutput`
 with amplitude in dB μV/m and phase in degrees corrected for dispersion.
 """
 function process(path)
@@ -740,7 +740,7 @@ function process(path)
         datetime = s.datetime
     end
 
-    output = LWMS.BasicOutput()
+    output = BasicOutput()
     output.name = name
     output.description = description
     output.datetime = datetime
@@ -760,7 +760,7 @@ function process(path)
     return output
 end
 
-function writeshfile(s::LocalOMP)
+function writeshfile(s::LocalParallel)
     runname = s.runname
     rundir = s.rundir
     numnodes = s.numnodes
@@ -835,7 +835,7 @@ function writeshfile(s::Summit)
     return shfile
 end
 
-function runjob(s::LocalOMP, shfile)
+function runjob(s::LocalParallel, shfile)
     jobname = read(`$shfile`, String)
 
     println(jobname)

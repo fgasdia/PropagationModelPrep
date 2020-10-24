@@ -1,11 +1,29 @@
 module LWPC
 
-using JSON3, CSV, DataFrames, Printf
+using JSON3, CSV, DataFrames, Printf, Distributed
 
 using ..PropagationModelPrep
-using ..PropagationModelPrep: rounduprange, unwrap!
-import ..LWMS
+using ..PropagationModelPrep: rounduprange, unwrap!, LWMS
+using ..LWMS
 
+import LocalParallelModule
+
+# const NPROCS = Ref{Int}()
+# get_nprocs() = NPROCS[]
+function set_nprocs(i::Int)
+    np = nprocs()
+    if np < i
+        npdiff = i - np
+        addprocs(npdiff)
+    elseif np > i
+        npdiff = np - i
+        rmprocs(npdiff)
+    end
+    # NPROCS[] = i
+end
+
+const jobs = RemoteChannel(()->Channel{BasicInput}(1000))
+const results = RemoteChannel(()->Channel{String}(1000))
 
 """
     run(file, computejob::ComputeJob, submitjob=true)
@@ -20,11 +38,6 @@ function run(file, computejob::ComputeJob; submitjob=true)
 
     s = LWMS.parse(file)
 
-    if computejob.runname != s.name
-        @info "Updating computejob runname to $(s.name)"
-        computejob.runname = s.name
-    end
-
     # Get abspath in case a relpath is provided
     # origrundir = splitpath(abspath(computejob.rundir))[end]
     # if origrundir != computejob.runname
@@ -38,33 +51,34 @@ function run(file, computejob::ComputeJob; submitjob=true)
 
     if !isdir(rundir)
         # Create rundir if it doesn't exist
-        @info "Creating $rundir/"
-        mkpath(rundir)
+        newpath = abspath(rundir)
+        @info "Creating $newpath"
+        mkpath(newpath)
     end
 
-    build(s, computejob)
-
-    if submitjob
-        runjob(computejob)
+    if s isa BatchInput
+        buildrunjob(s, computejob)
+    else
+        build(s, computejob)
+        submitjob && runjob(computejob)
     end
 
     return nothing
 end
 
-"""
-    build(s::LWMS.BasicInput, computejob::ComputeJob, inputs::Inputs)
+function build(s::BasicInput, computejob::ComputeJob)
+    if computejob.runname != s.name
+        @info "Updating computejob runname to $(s.name)"
+        computejob.runname = s.name
+    end
 
-This is essentially a "private" function that sets default parameters for LWPC
-and generates the necessary input files.
-"""
-function build(s::LWMS.BasicInput, computejob::ComputeJob)
     writeinp(s, computejob)
     writendx(s, computejob)
 
     return nothing
 end
 
-function writeinp(s::LWMS.BasicInput, computejob::ComputeJob)
+function writeinp(s::BasicInput, computejob::ComputeJob)
     exepath = computejob.exefile
     lwpcpath, exename = splitdir(exepath)
     runname = computejob.runname
@@ -108,11 +122,11 @@ function writeinp(s::LWMS.BasicInput, computejob::ComputeJob)
             # be Gauss. Also, rounded up because exactly 0 is not supported
 
             r = round(Int, s.segment_ranges[i]/1e3)  # dist in km
-            b_az = rad2deg(s.b_az[i])  # deg east of north
-            b_dip = rad2deg(s.b_dip[i])  # deg from horizontal
-            b_mag = round(s.b_mag[i]*1e4, digits=6, RoundUp)
+            b_az = rad2deg(s.b_azs[i])  # deg east of north
+            b_dip = rad2deg(s.b_dips[i])  # deg from horizontal
+            b_mag = round(s.b_mags[i]*1e4, digits=6, RoundUp)
             gsigma = round(s.ground_sigmas[i], digits=6)
-            gepsr = s.ground_epsr[i]
+            gepsr = s.ground_epsrs[i]
             beta = round(s.betas[i], digits=3)
             hprime = round(s.hprimes[i], digits=3)
 
@@ -129,7 +143,7 @@ function writeinp(s::LWMS.BasicInput, computejob::ComputeJob)
     return nothing
 end
 
-function writendx(s::LWMS.BasicInput, computejob::ComputeJob)
+function writendx(s::BasicInput, computejob::ComputeJob)
     exepath = computejob.exefile
     lwpcpath, exename = splitdir(exepath)
     runname = computejob.runname
@@ -157,11 +171,13 @@ function runjob(computejob::Local)
     output_files = readdir(joinpath(lwpcpath, "Output"))
     for file in output_files
         if splitext(basename(file))[1] == runname
-            rm(joinpath(lwpcpath, "Output", file), force=true)
+            outfilepath = joinpath(lwpcpath, "Output", file)
+            isfile(outfilepath) && rm(outfilepath)
         end
     end
 
-    rm(joinpath(lwpcpath, "cases", runname*".log"), force=true)
+    logfilepath = joinpath(lwpcpath, "cases", runname*".log")
+    isfile(logfilepath) && rm(logfilepath)
 
     input = joinpath("cases", runname)
 
@@ -171,10 +187,33 @@ function runjob(computejob::Local)
     output = read(`$exename $input`, String)
     cd(origdir)
 
-    println("Job submitted!\n")
-    println(output)
+    return output
+end
 
-    return nothing
+function make_jobs(s::BatchInput)
+    for i in eachindex(s.inputs)
+        put!(jobs, s.inputs[i])
+    end
+end
+
+function buildrunjob(s::BatchInput{BasicInput}, computejob::LocalParallel)
+    nprocs() == computejob.numnodes || set_nprocs(computejob.numnodes)
+
+    @everywhere using .LocalParallelModule
+
+    @async make_jobs(s)
+
+    for p in workers() # start tasks on the workers to process requests in parallel
+        remote_do(LocalParallelModule.batchrunjobs, p, jobs, results)
+    end
+
+    N = length(s.inputs)
+    pm = Progress(N)
+    while N > 0
+        jobname = take!(results)
+        N = N - 1
+        next!(pm)
+    end
 end
 
 function readlog(file)
@@ -240,7 +279,7 @@ function process(jsonfile, computejob::ComputeJob)
     dist, amp, phase = readlog(joinpath(lwpcpath, "cases", runname*".log"))
     dist *= 1e3  # convert to m
 
-    output = LWMS.BasicOutput()
+    output = BasicOutput()
     output.name = name
     output.description = description
     output.datetime = datetime

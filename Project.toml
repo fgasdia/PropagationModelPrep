@@ -9,10 +9,12 @@ CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 DSP = "717857b8-e6f2-59f4-9121-6e50c889abd2"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
 Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
 JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 LongwaveModeSolver = "38c6559a-e0a7-48c6-827d-3f02e2d19cec"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
 
 [extras]
