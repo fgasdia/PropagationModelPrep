@@ -173,6 +173,7 @@ function test_lwpclocalparallel()
     computejob = LocalParallel(scenarioname, ".", "C:\\LWPCv21\\lwpm.exe", 4)
 
     LWPC.run(scenarioname*".json", computejob)
+    LWPC.process(scenarioname*".json", computejob)
 end
 
 @testset "PropagationModelPrep" begin

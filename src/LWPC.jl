@@ -6,24 +6,6 @@ using ..PropagationModelPrep
 using ..PropagationModelPrep: rounduprange, unwrap!, LWMS
 using ..LWMS
 
-
-# addprocs(4)
-# @everywhere using Pkg
-# @everywhere using ..PropagationModelPrep
-
-function set_nprocs(i::Int)
-    np = nprocs()
-    if np < i
-        npdiff = i - np
-        addprocs(npdiff, exeflags="--project")
-    elseif np > i
-        npdiff = np - i
-        rmprocs(npdiff)
-    end
-    @everywhere push!(LOAD_PATH, abspath(".."))
-    @everywhere @eval using PropagationModelPrep
-end
-
 """
     run(file, computejob::ComputeJob, submitjob=true)
 
@@ -181,24 +163,22 @@ function runjob(computejob::Local)
 end
 
 function buildrunjob(s::BatchInput{BasicInput}, computejob::LocalParallel)
-    # nprocs() == computejob.numnodes || set_nprocs(computejob.numnodes)
-
-    pmap(x->_buildrunjob(x, computejob), s.inputs)
-end
-
-function _buildrunjob(s, computejob::LocalParallel)
-    pid = myid()
+    N = Threads.nthreads()
+    N == computejob.numnodes || @warn "computejob.numnodes does not match Threads.nthreads()"
 
     exefile, exeext = splitext(computejob.exefile)
     exepath, exefilename = splitdir(exefile)
 
-    newexepath = exepath*"_"*string(pid)
-    newexefile = joinpath(newexepath, exefilename*string(pid)*exeext)
+    Threads.@threads for i in eachindex(s.inputs)
+        tid = Threads.threadid() + 1  # reserve threadid
+        newexepath = exepath*"_"*string(tid)
+        newexefile = joinpath(newexepath, exefilename*string(tid)*exeext)
 
-    cj = Local(s.name, newexepath, newexefile)
+        cj = Local(s.inputs[i].name, newexepath, newexefile)
 
-    build(s, cj)
-    runjob(cj)
+        build(s.inputs[i], cj)
+        runjob(cj)
+    end
 
     return nothing
 end
@@ -292,7 +272,7 @@ function process(jsonfile, computejob::LocalParallel)
 
     s = LWMS.parse(jsonfile)
 
-    batch = BatchOutput{BasicOutput}
+    batch = BatchOutput{BasicOutput}()
     batch.name = s.name
     batch.description = s.description
     batch.datetime = Dates.now()
