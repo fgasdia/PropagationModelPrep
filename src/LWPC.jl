@@ -39,7 +39,6 @@ function run(file, computejob::ComputeJob; submitjob=true)
     return nothing
 end
 
-
 function build(s::BasicInput, computejob::ComputeJob)
     if computejob.runname != s.name
         @info "Updating computejob runname to $(s.name)"
