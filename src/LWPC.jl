@@ -6,24 +6,23 @@ using ..PropagationModelPrep
 using ..PropagationModelPrep: rounduprange, unwrap!, LWMS
 using ..LWMS
 
-import LocalParallelModule
 
-# const NPROCS = Ref{Int}()
-# get_nprocs() = NPROCS[]
+# addprocs(4)
+# @everywhere using Pkg
+# @everywhere using ..PropagationModelPrep
+
 function set_nprocs(i::Int)
     np = nprocs()
     if np < i
         npdiff = i - np
-        addprocs(npdiff)
+        addprocs(npdiff, exeflags="--project")
     elseif np > i
         npdiff = np - i
         rmprocs(npdiff)
     end
-    # NPROCS[] = i
+    @everywhere push!(LOAD_PATH, abspath(".."))
+    @everywhere @eval using PropagationModelPrep
 end
-
-const jobs = RemoteChannel(()->Channel{BasicInput}(1000))
-const results = RemoteChannel(()->Channel{String}(1000))
 
 """
     run(file, computejob::ComputeJob, submitjob=true)
@@ -38,15 +37,6 @@ function run(file, computejob::ComputeJob; submitjob=true)
 
     s = LWMS.parse(file)
 
-    # Get abspath in case a relpath is provided
-    # origrundir = splitpath(abspath(computejob.rundir))[end]
-    # if origrundir != computejob.runname
-    #     # Check if computejob rundir path ends with a directory called runname
-    #     rundir = joinpath(computejob.rundir, computejob.runname)
-    #     @info "Running in $rundir/"
-    # else
-    #     rundir = computejob.rundir
-    # end
     rundir = computejob.rundir
 
     if !isdir(rundir)
@@ -190,30 +180,27 @@ function runjob(computejob::Local)
     return output
 end
 
-function make_jobs(s::BatchInput)
-    for i in eachindex(s.inputs)
-        put!(jobs, s.inputs[i])
-    end
+function buildrunjob(s::BatchInput{BasicInput}, computejob::LocalParallel)
+    # nprocs() == computejob.numnodes || set_nprocs(computejob.numnodes)
+
+    pmap(x->_buildrunjob(x, computejob), s.inputs)
 end
 
-function buildrunjob(s::BatchInput{BasicInput}, computejob::LocalParallel)
-    nprocs() == computejob.numnodes || set_nprocs(computejob.numnodes)
+function _buildrunjob(s, computejob::LocalParallel)
+    pid = myid()
 
-    @everywhere using .LocalParallelModule
+    exefile, exeext = splitext(computejob.exefile)
+    exepath, exefilename = splitdir(exefile)
 
-    @async make_jobs(s)
+    newexepath = exepath*"_"*string(pid)
+    newexefile = joinpath(newexepath, exefilename*string(pid)*exeext)
 
-    for p in workers() # start tasks on the workers to process requests in parallel
-        remote_do(LocalParallelModule.batchrunjobs, p, jobs, results)
-    end
+    cj = Local(s.name, newexepath, newexefile)
 
-    N = length(s.inputs)
-    pm = Progress(N)
-    while N > 0
-        jobname = take!(results)
-        N = N - 1
-        next!(pm)
-    end
+    build(s, cj)
+    runjob(cj)
+
+    return nothing
 end
 
 function readlog(file)
@@ -297,6 +284,53 @@ function process(jsonfile, computejob::ComputeJob)
     end
 
     return output
+end
+
+function process(jsonfile, computejob::LocalParallel)
+    lwpcfile, ext = splitext(computejob.exefile)
+    lwpcpath, lwpcfilename = splitdir(lwpcfile)
+
+    s = LWMS.parse(jsonfile)
+
+    batch = BatchOutput{BasicOutput}
+    batch.name = s.name
+    batch.description = s.description
+    batch.datetime = Dates.now()
+
+    for n in 1:nprocs()
+        newlwpcpath = lwpcpath*"_"*string(n)
+
+        for i in eachindex(s.inputs)
+            runname = s.inputs[i].name
+            logfile = joinpath(newlwpcpath, "cases", runname*".json")
+
+            if isfile(logfile)
+                dist, amp, phase = readlog(logfile)
+                dist *= 1e3  # convert to m
+
+                output = BasicOutput()
+                output.name = name
+                output.description = description
+                output.datetime = datetime
+
+                # Strip last index of each field because they're 0 (and then inf)
+                output.output_ranges = round.(dist, digits=-3)  # fix floating point, rounded to nearest km
+                output.amplitude = amp
+                output.phase = phase
+
+                push!(batch.outputs, output)
+            end
+        end
+    end
+
+    # Save output
+    json_str = JSON3.write(batch)
+
+    open(joinpath(computejob.rundir, computejob.name*"_lwpc.json"), "w") do f
+        write(f, json_str)
+    end
+
+    return batch
 end
 
 end  # module

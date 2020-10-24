@@ -47,7 +47,6 @@ function generatejson()
     return nothing
 end
 
-
 function generate_batchbasic()
     N = 2
     rep(v) = repeat(v, 1, N)
@@ -158,50 +157,22 @@ function test_lwpclocal()
     LWPC.process(scenarioname*".json", computejob)
 end
 
+function test_batchrunjob()
+    scenarioname = "batchbasic"
+    computejob = LocalParallel(scenarioname, ".", "C:\\LWPCv21\\lwpm.exe", 4)
+
+    logfile = "C:\\LWPCv21_1\\cases\\1.log"
+
+    s = LWMS.parse(scenarioname*".json")
+    LWPC._buildrunjob(s.inputs[1], computejob)
+    LWPC.readlog(logfile)
+end
+
 function test_lwpclocalparallel()
     scenarioname = "batchbasic"
     computejob = LocalParallel(scenarioname, ".", "C:\\LWPCv21\\lwpm.exe", 4)
 
     LWPC.run(scenarioname*".json", computejob)
-end
-
-function test_lwpcparallellocal()
-    nprocs() < 4 && addprocs(4 - nprocs())
-
-    scenarioname = ""
-    computejob = LocalParallel(scenarioname, ".", "C:\\LWPCv21\\lwpm.exe")
-
-    jobs = RemoteChannel(()->Channel{Int}(32));
-    results = RemoteChannel(()->Channel{Tuple}(32));
-
-    @everywhere function do_work(jobs, results) # define work function everywhere
-        while true
-            job_id = take!(jobs)
-            exec_time = 5rand()
-            put!(results, (job_id, exec_time, myid()))
-        end
-    end
-
-    function make_jobs(n)
-        for i in 1:n
-            put!(jobs, i)
-        end
-    end
-
-    n = 12
-
-    @async make_jobs(n) # feed the jobs channel with "n" jobs
-
-    for p in workers() # start tasks on the workers to process requests in parallel
-        remote_do(do_work, p, jobs, results)
-    end
-
-    @elapsed while n > 0 # print out results
-        job_id, exec_time, where = take!(results)
-        println("$job_id finished in $(round(exec_time; digits=2)) seconds on worker $where")
-        global n = n - 1
-    end
-
 end
 
 @testset "PropagationModelPrep" begin
