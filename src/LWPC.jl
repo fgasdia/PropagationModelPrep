@@ -1,6 +1,7 @@
 module LWPC
 
-using JSON3, CSV, DataFrames, Printf, Distributed
+using Distributed
+using JSON3, CSV, DataFrames, Printf
 
 using ..PropagationModelPrep
 using ..PropagationModelPrep: rounduprange, unwrap!, LWMS
@@ -37,6 +38,7 @@ function run(file, computejob::ComputeJob; submitjob=true)
 
     return nothing
 end
+
 
 function build(s::BasicInput, computejob::ComputeJob)
     if computejob.runname != s.name
@@ -163,24 +165,38 @@ function runjob(computejob::Local)
 end
 
 function buildrunjob(s::BatchInput{BasicInput}, computejob::LocalParallel)
-    N = Threads.nthreads()
-    N == computejob.numnodes || @warn "computejob.numnodes does not match Threads.nthreads()"
+    nprocs() == computejob.numnodes+1 || @warn "computejob.numnodes does not match nprocs(). Using $(nprocs()) processes."
 
-    exefile, exeext = splitext(computejob.exefile)
-    exepath, exefilename = splitdir(exefile)
+    _buildrunjob = function (s)
+        pid = myid()
 
-    Threads.@threads for i in eachindex(s.inputs)
-        tid = Threads.threadid() + 1  # reserve threadid
-        newexepath = exepath*"_"*string(tid)
-        newexefile = joinpath(newexepath, exefilename*string(tid)*exeext)
+        exefile, exeext = splitext(computejob.exefile)
+        lwpcpath, exefilename = splitdir(exefile)
 
-        cj = Local(s.inputs[i].name, newexepath, newexefile)
+        newlwpcpath = lwpcpath*"_"*string(pid)
+        newexefile = joinpath(newlwpcpath, exefilename*string(pid)*exeext)
 
-        build(s.inputs[i], cj)
+        cj = Local(s.name, newlwpcpath, newexefile)
+
+        build(s, cj)
         runjob(cj)
+
+        tstart = time()  # seconds
+        goodlog = false
+        while !goodlog && (time() - tstart < 60)
+            try
+                o = readlog(joinpath(newlwpcpath, "cases", s.name*".log"))
+                goodlog = true
+            catch
+                continue
+            end
+        end
+
+        sleep(0.2)
+        return nothing
     end
 
-    return nothing
+    pmap(_buildrunjob, s.inputs)
 end
 
 function readlog(file)
@@ -192,7 +208,8 @@ function readlog(file)
 
     # Read log file
     raw = CSV.File(file; skipto=firstdataline, footerskip=skiplastlines,
-                   delim=' ', ignorerepeated=true, header=false)
+                   delim=' ', ignorerepeated=true, header=false,
+                   silencewarnings=true)
 
     # Stack the columns together
     dist = vcat(raw.Column1, raw.Column4, raw.Column7)
@@ -226,22 +243,20 @@ function readlog(file)
 end
 
 function process(jsonfile, computejob::ComputeJob)
+    s = LWMS.parse(jsonfile)
+
+    return process(s, computejob)
+end
+
+function process(s::BasicInput, computejob::ComputeJob)
     exepath = computejob.exefile
     lwpcpath, exename = splitdir(exepath)
     runname = computejob.runname
     rundir = computejob.rundir
 
-    if !isfile(jsonfile)
-        @info "$jsonfile not found. Assuming run name is $runname."
-        name = runname
-        description = "LWPC results"
-        datetime = Dates.now()
-    else
-        s = LWMS.parse(jsonfile)
-        name = s.name
-        description = s.description
-        datetime = s.datetime
-    end
+    name = s.name
+    description = s.description
+    datetime = s.datetime
 
     dist, amp, phase = readlog(joinpath(lwpcpath, "cases", runname*".log"))
     dist *= 1e3  # convert to m
@@ -267,10 +282,14 @@ function process(jsonfile, computejob::ComputeJob)
 end
 
 function process(jsonfile, computejob::LocalParallel)
+    s = LWMS.parse(jsonfile)
+
+    return process(s, computejob)
+end
+
+function process(s::BatchInput{BasicInput}, computejob::LocalParallel)
     lwpcfile, ext = splitext(computejob.exefile)
     lwpcpath, lwpcfilename = splitdir(lwpcfile)
-
-    s = LWMS.parse(jsonfile)
 
     batch = BatchOutput{BasicOutput}()
     batch.name = s.name

@@ -1,9 +1,13 @@
 using Test, Dates, Distributed
 using JSON3
+using Reexport
 using LongwaveModeSolver
 const LWMS = LongwaveModeSolver
 
 using PropagationModelPrep
+addprocs(4, exeflags="--project")
+@everywhere push!(LOAD_PATH, abspath("../src"))
+@everywhere using PropagationModelPrep
 
 function generatejson()
     # Waveguide definition
