@@ -58,7 +58,7 @@ function writeinp(s::BasicInput, computejob::ComputeJob)
     runname = computejob.runname
 
     freq = s.frequency/1e3  # in kHz
-    max_range = trunc(Int, rounduprange(maximum(s.output_ranges))/1e3)  # convert to km
+    max_range = ceil(Int, maximum(s.output_ranges)/1e3)  # convert to km
     diffrange = diff(s.output_ranges)
     drange = trunc(Int, diffrange[1]/1e3)  # in km
     length(unique(round.(diffrange))) == 1 || @info "Using drange = $drange km"

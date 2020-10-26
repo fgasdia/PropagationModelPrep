@@ -389,7 +389,7 @@ uuid = "56ddb016-857b-54e1-b83d-db4d58db5568"
 
 [[LongwaveModeSolver]]
 deps = ["BetterExp", "Dates", "Debugger", "DiffEqCallbacks", "FunctionWrappers", "Interpolations", "JSON3", "LinearAlgebra", "ModifiedHankelFunctionsOfOrderOneThird", "OrdinaryDiffEq", "Parameters", "PolynomialRoots", "ProgressMeter", "RootsAndPoles", "StaticArrays", "StructTypes", "VoronoiDelaunay"]
-git-tree-sha1 = "cd2b4674e186731bb7f0e470a4130d659c122ade"
+git-tree-sha1 = "5381aaaae0f74e7231b0b8f124957bba79aa1715"
 repo-rev = "master"
 repo-url = "https://github.com/fgasdia/LongwaveModeSolver"
 uuid = "38c6559a-e0a7-48c6-827d-3f02e2d19cec"
