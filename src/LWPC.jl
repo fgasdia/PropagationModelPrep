@@ -2,6 +2,7 @@ module LWPC
 
 using Distributed
 using JSON3, CSV, DataFrames, Printf
+using UUIDs
 
 using ..PropagationModelPrep
 using ..PropagationModelPrep: rounduprange, unwrap!, LWMS
@@ -72,6 +73,8 @@ function writeinp(s::BasicInput, computejob::ComputeJob)
         ionosphere = "range exponential $runname"
     end
 
+    # Using uuid1() as transmitter name because otherwise if freq doesn't match up with an
+    # existing transmitter name in xmtr.lis, it will break
     endline = "\n"
     open(joinpath(lwpcpath, "cases", runname*".inp"), "w") do f
         write(f, "file-mds    Output\\", endline)
@@ -80,7 +83,7 @@ function writeinp(s::BasicInput, computejob::ComputeJob)
         write(f, "file-ndx    cases\\", endline)
         write(f, "case-id     $runname", endline)
         write(f, "tx          $runname", endline)
-        write(f, "tx-data     vlftx  $freq  0.0  0.0  100.0  0.0  0.000  0.0", endline)
+        write(f, "tx-data     $(uuid1())  $freq  0.0  0.0  100.0  0.0  0.000  0.0", endline)
         write(f, "receivers   0.0000  0.0000", endline)
         write(f, "range-max   $max_range", endline)
         write(f, "ionosphere  $ionosphere", endline)
