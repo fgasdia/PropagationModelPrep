@@ -5,7 +5,7 @@ using DSP, JSON3
 using Interpolations
 
 using ..PropagationModelPrep
-using ..PropagationModelPrep: rounduprange, unwrap!
+using ..PropagationModelPrep: rounduprange, unwrap!, LWMS
 using ..LWMS
 
 """
