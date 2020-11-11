@@ -526,7 +526,7 @@ and generates the necessary input files.
 function build(s::BasicInput, computejob::ComputeJob, inputs::Inputs)
     prepbuild(s, computejob, inputs)
 
-    all(s.b_dips .≈ 90) || @warn "Segment magnetic field is not vertical"
+    all(s.b_dips .≈ π/2) || @warn "Segment magnetic field is not vertical"
     length(unique(s.b_mags)) == 1 || @warn "Magnetic field is not homogeneous"
 
     # Useful values
@@ -598,7 +598,7 @@ and generates the necessary input files.
 function build(s::TableInput, computejob::ComputeJob, inputs::Inputs)
     prepbuild(s, computejob, inputs)
 
-    all(s.b_dips .≈ 90) || @warn "Segment magnetic field is not vertical"
+    all(s.b_dips .≈ π/2) || @warn "Segment magnetic field is not vertical"
     length(unique(s.b_mags)) == 1 || @warn "Magnetic field is not homogeneous"
 
     # Useful values
