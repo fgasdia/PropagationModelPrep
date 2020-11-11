@@ -391,6 +391,8 @@ Write ne.dat at `path` given electron density array `ne`.
 range grid cells). It can also be flattened vector of the same length.
 """
 function writene(ne::Array{Float64}; path="")
+    ne[ne .> 3e9] .= 3e9
+
     open(joinpath(path,"ne.dat"), "w") do f
         write(f, permutedims(ne))  # for c++
     end
