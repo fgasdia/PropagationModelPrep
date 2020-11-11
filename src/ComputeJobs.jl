@@ -13,6 +13,15 @@ All `ComputeJob`s should have `runname`, `rundir`, and `exefile` fields at a min
 """
 abstract type ComputeJob end
 
+function Base.copy(cj::ComputeJob)
+    T = typeof(cj)
+    newcj = T()
+    for fn in fieldnames(cj)
+        setfield!(newcj, fn, getfield(cj, fn))
+    end
+    return newcj
+end
+
 """
     ParallelComputeJob
 
@@ -37,6 +46,8 @@ mutable struct Summit <: ParallelComputeJob
     exefile::String
     numnodes::Int
     walltime::String
+
+    Summit() = new()
 end
 
 """
@@ -49,6 +60,8 @@ mutable struct Local <: ComputeJob
     runname::String
     rundir::String
     exefile::String
+
+    Local() = new()
 end
 
 mutable struct LocalParallel <: ParallelComputeJob
@@ -56,4 +69,6 @@ mutable struct LocalParallel <: ParallelComputeJob
     rundir::String
     exefile::String
     numnodes::Int
+
+    LocalParallel() = new()
 end

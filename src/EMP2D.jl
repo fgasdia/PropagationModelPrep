@@ -497,6 +497,7 @@ function prepbuild(s, computejob::ComputeJob, inputs::Inputs)
     if origrundir != computejob.runname
         # Check if computejob rundir path ends with a directory called runname
         rundir = joinpath(computejob.rundir, computejob.runname)*"/"
+        computejob.rundir = rundir
         @info "Running in $rundir"
     else
         rundir = computejob.rundir*"/"
@@ -514,7 +515,8 @@ end
 function build(s::BatchInput, computejob::ComputeJob, inputs::Inputs)
     shfiles = Vector{String}(undef, length(s.inputs))
     for i in eachindex(s.inputs)
-        shfiles[i] = build(s.inputs[i], computejob, inputs)
+        # computejob is mutated by build, so we copy the original first
+        shfiles[i] = build(s.inputs[i], copy(computejob), inputs)
     end
     return shfiles
 end
