@@ -49,6 +49,15 @@ mutable struct Summit <: ParallelComputeJob
 
     Summit() = new()
 end
+function Summit(runname, rundir, exefile, numnodes, walltime)
+    cj = Summit()
+    cj.runname = runname
+    cj.rundir = rundir
+    cj.exefile = exefile
+    cj.numnodes = numnodes
+    cj.walltime = walltime
+    return cj
+end
 
 """
     Local <: ComputeJob
@@ -63,6 +72,13 @@ mutable struct Local <: ComputeJob
 
     Local() = new()
 end
+function Local(runname, rundir, exefile)
+    cj = Local()
+    cj.runname = runname
+    cj.rundir = rundir
+    cj.exefile = exefile
+    return cj
+end
 
 mutable struct LocalParallel <: ParallelComputeJob
     runname::String
@@ -71,4 +87,13 @@ mutable struct LocalParallel <: ParallelComputeJob
     numnodes::Int
 
     LocalParallel() = new()
+end
+function LocalParallel(runname, rundir, exefile, numnodes, walltime)
+    cj = LocalParallel()
+    cj.runname = runname
+    cj.rundir = rundir
+    cj.exefile = exefile
+    cj.numnodes = numnodes
+    cj.walltime = walltime
+    return cj
 end
