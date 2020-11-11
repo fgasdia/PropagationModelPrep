@@ -2,6 +2,7 @@ module EMP2D
 
 using Dates
 using DSP, JSON3
+using Interpolations
 
 using ..PropagationModelPrep
 using ..PropagationModelPrep: rounduprange, unwrap!
@@ -443,6 +444,47 @@ function run(file, computejob::ComputeJob; inputs=nothing, submitjob=true)
 
     s = LWMS.parse(file)
 
+    if isnothing(inputs)
+        max_range = maximum(s.output_ranges)
+        max_range = rounduprange(max_range)
+
+        inputs = Inputs(LWMS.EARTH_RADIUS, 110e3, 50e3, 500, 250, max_range, 500, [s.frequency])
+    end
+
+    shfiles = build(s, computejob, inputs)
+
+    if submitjob
+        submitandrun(shfiles)
+    end
+
+    return nothing
+end
+
+function submitandrun(shfile, computejob::ComputeJob)
+    rundir, shfile = splitdir(shfile)
+    exefile = computejob.exefile
+    exename = splitdir(exefile)[2]
+    newexefile = joinpath(rundir, exename)
+    isfile(newexefile) || cp(exefile, newexefile)
+    runjob(computejob, shfile)
+end
+
+function submitandrun(shfiles::AbstractVector, computejob::ComputeJob)
+    exefile = computejob.exefile
+    exename = splitdir(exefile)[2]
+
+    for shfile in shfiles
+        rundir, shfile = splitdir(shfile)
+        runname, shext = splitext(shfile)
+
+        newexefile = joinpath(rundir, exename)
+        isfile(newexefile) || cp(exefile, newexefile)
+        computejob.runname = runname
+        runjob(computejob, shfile)
+    end
+end
+
+function prepbuild(s, computejob::ComputeJob, inputs::Inputs)
     if computejob.runname != s.name
         @info "Updating computejob runname to $(s.name)"
         computejob.runname = s.name
@@ -464,24 +506,15 @@ function run(file, computejob::ComputeJob; inputs=nothing, submitjob=true)
         mkpath(rundir)
     end
 
-    if isnothing(inputs)
-        max_range = maximum(s.output_ranges)
-        max_range = rounduprange(max_range)
-
-        inputs = Inputs(LWMS.EARTH_RADIUS, 110e3, 50e3, 500, 250, max_range, 500, [s.frequency])
-    end
-
-    shfile = build(s, computejob, inputs)
-
-    if submitjob
-        exefile = computejob.exefile
-        exename = splitdir(exefile)[2]
-        newexefile = joinpath(rundir, exename)
-        isfile(newexefile) || cp(exefile, newexefile)
-        runjob(computejob, shfile)
-    end
-
     return nothing
+end
+
+function build(s::BatchInput, computejob::ComputeJob, inputs::Inputs)
+    shfiles = Vector{String}(undef, length(s.inputs))
+    for i in eachindex(s.inputs)
+        shfiles[i] = build(s.inputs[i], computejob, inputs)
+    end
+    return shfiles
 end
 
 """
@@ -491,9 +524,10 @@ This is essentially a "private" function that sets default parameters for emp2d
 and generates the necessary input files.
 """
 function build(s::BasicInput, computejob::ComputeJob, inputs::Inputs)
+    prepbuild(s, computejob, inputs)
 
-    all(s.b_dip .≈ 90) || @warn "Segment magnetic field is not vertical"
-    length(unique(s.b_mag)) == 1 || @warn "Magnetic field is not homogeneous"
+    all(s.b_dips .≈ 90) || @warn "Segment magnetic field is not vertical"
+    length(unique(s.b_mags)) == 1 || @warn "Magnetic field is not homogeneous"
 
     # Useful values
     r, dr, th = generategrid(inputs)  # r is along radial direction (height)
@@ -532,7 +566,7 @@ function build(s::BasicInput, computejob::ComputeJob, inputs::Inputs)
 
         # Ground profile
         gsigma[segment_begin_idx:segment_end_idx] .= s.ground_sigmas[i]
-        gepsilon[segment_begin_idx:segment_end_idx] .= s.ground_epsr[i]
+        gepsilon[segment_begin_idx:segment_end_idx] .= s.ground_epsrs[i]
     end
 
     source = Source(inputs)
@@ -554,6 +588,79 @@ function build(s::BasicInput, computejob::ComputeJob, inputs::Inputs)
 
     return shfile
 end
+
+"""
+    build(s::TableInput, computejob::ComputeJob, inputs::Inputs)
+
+This is essentially a "private" function that sets default parameters for emp2d
+and generates the necessary input files.
+"""
+function build(s::TableInput, computejob::ComputeJob, inputs::Inputs)
+    prepbuild(s, computejob, inputs)
+
+    all(s.b_dips .≈ 90) || @warn "Segment magnetic field is not vertical"
+    length(unique(s.b_mags)) == 1 || @warn "Magnetic field is not homogeneous"
+
+    # Useful values
+    r, dr, th = generategrid(inputs)  # r is along radial direction (height)
+    altitudes = r .- inputs.Re
+
+    rr = length(r)
+    hh = length(th)
+
+    max_range = inputs.range
+    drange = inputs.drange
+    rangevec = range(0, max_range, length=hh)
+
+    # Fill in values for each waveguide segment
+    ne = Matrix{Float64}(undef, rr, hh)
+    nu = similar(ne)
+    gsigma = Vector{Float64}(undef, hh)
+    gepsilon = similar(gsigma)
+
+    for i in eachindex(s.segment_ranges)
+        # Find closest match of segment range to rangevec
+        segment_begin_idx = argmin(abs.(rangevec .- s.segment_ranges[i]))
+        if i == lastindex(s.segment_ranges)
+            segment_end_idx = hh
+        else
+            segment_end_range = s.segment_ranges[i+1]
+            segment_end_idx = argmin(abs.(rangevec .- segment_end_range))
+        end
+
+        # Electron density profile
+        density_itp = LinearInterpolation(s.altitude, s.density[i], extrapolation_bc=Line())
+        ne[:,segment_begin_idx:segment_end_idx] .= density_itp(altitudes)
+
+        # Electron collision profile
+        collision_itp = LinearInterpolation(s.altitude, s.collision_frequency[i], extrapolation_bc=Line())
+        nu[:,segment_begin_idx:segment_end_idx] .= collision_itp(altitudes)
+
+        # Ground profile
+        gsigma[segment_begin_idx:segment_end_idx] .= s.ground_sigmas[i]
+        gepsilon[segment_begin_idx:segment_end_idx] .= s.ground_epsrs[i]
+    end
+
+    source = Source(inputs)
+    ground = Ground()
+    ground.gsigma = gsigma
+    ground.gepsilon = gepsilon
+
+    rundir = computejob.rundir
+
+    writeinputs(inputs, path=rundir)
+    writesource(source, path=rundir)
+    writeground(ground, path=rundir)
+    writebfield(s.b_mag[1], inputs, path=rundir)
+    writene(ne, path=rundir)
+    writeni(ne, path=rundir)
+    writenu(nu, path=rundir)
+
+    shfile = writeshfile(computejob)
+
+    return shfile
+end
+
 
 """
     create_emp_source(def::Defaults, in::Inputs)
