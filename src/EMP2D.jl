@@ -454,7 +454,7 @@ function run(file, computejob::ComputeJob; inputs=nothing, submitjob=true)
     shfiles = build(s, computejob, inputs)
 
     if submitjob
-        submitandrun(shfiles)
+        submitandrun(shfiles, computejob)
     end
 
     return nothing
