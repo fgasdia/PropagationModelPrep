@@ -16,7 +16,7 @@ abstract type ComputeJob end
 function Base.copy(cj::ComputeJob)
     T = typeof(cj)
     newcj = T()
-    for fn in fieldnames(cj)
+    for fn in fieldnames(T)
         setfield!(newcj, fn, getfield(cj, fn))
     end
     return newcj
