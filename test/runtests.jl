@@ -30,9 +30,9 @@ function generatejson()
     input.segment_ranges = segment_ranges
     input.hprimes = hprimes
     input.betas = betas
-    input.b_mags = b_mag
-    input.b_dips = b_dip
-    input.b_azs = b_az
+    input.b_mags = b_mags
+    input.b_dips = b_dips
+    input.b_azs = b_azs
     input.ground_sigmas = ground_sigmas
     input.ground_epsrs = ground_epsrs
     input.frequency = frequency
@@ -184,4 +184,6 @@ end
     rm("homogeneous1", force=true, recursive=true)
     rm("homogeneous2", force=true, recursive=true)
     isfile("batchbasic.json") && rm("batchbasic.json")
+    isfile("homogeneous1.json") && rm("homogeneous1.json")
+    isfile("homogeneous1_lwpc.json") && rm("homogeneous1_lwpc.json")
 end
