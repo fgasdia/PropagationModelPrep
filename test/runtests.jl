@@ -1,22 +1,18 @@
 using Test, Dates, Distributed
 using JSON3
-using Reexport
-using LongwaveModeSolver
-const LWMS = LongwaveModeSolver
+using LongwaveModePropagator
+const LMP = LongwaveModePropagator
 
 using PropagationModelPrep
-addprocs(4, exeflags="--project")
-@everywhere push!(LOAD_PATH, abspath("../src"))
-@everywhere using PropagationModelPrep
 
 function generatejson()
     # Waveguide definition
     segment_ranges = [0]
     hprimes = [75]
     betas = [0.32]
-    b_mag = fill(50e-6, length(segment_ranges))  # TODO: rename to be consistent (plural?)
-    b_dip = fill(90.0, length(segment_ranges))
-    b_az = fill(0.0, length(segment_ranges))
+    b_mags = fill(50e-6, length(segment_ranges))
+    b_dips = fill(90.0, length(segment_ranges))
+    b_azs = fill(0.0, length(segment_ranges))
     ground_sigmas = [0.001]
     ground_epsrs = [15]
 
@@ -26,7 +22,7 @@ function generatejson()
     # Outputs
     output_ranges = collect(0:5e3:2500e3)
 
-    input = LWMS.BasicInput()
+    input = LMP.BasicInput()
     input.name = "homogeneous1"
     input.description = "homogeneous ionosphere"
     input.datetime = Dates.now()
@@ -119,25 +115,23 @@ function test_unwrap()
     # Extract phase angle of spiral
     p = atan.(y,x)
 
-    issorted(p) == false
+    @test !issorted(p)
 
     PropagationModelPrep.unwrap!(p)
-    issorted(p) == true || return false
-
-    return true
+    @test issorted(p)
 end
 
-function test_mismatchedrunnames()
+function mismatchedrunnames()
     computejob = Summit("homogeneous2", "homogeneous1", 12, "01:00:00", "dummy_exe")
     EMP2D.run("homogeneous1.json", computejob; submitjob=false)
 end
 
-function test_newrundir()
+function newrundir()
     computejob = Summit("homogeneous1", "homogeneous2", 12, "01:00:00", "dummy_exe")
     EMP2D.run("homogeneous1.json", computejob; submitjob=false)
 end
 
-function test_filename_error()
+function filename_error()
     computejob = Summit("homogeneous1", "homogeneous1", 12, "01:00:00", "dummy_exe")
     EMP2D.run("homogeneous999.json", computejob; submitjob=false)
 end
@@ -149,33 +143,13 @@ function test_emp2dinputs()
 
     testinputs = EMP2D.readinputs("homogeneous1")
     for field in fieldnames(EMP2D.Inputs)
-        getfield(inputs, field) == getfield(testinputs, field) || return false
+        @test getfield(inputs, field) == getfield(testinputs, field)
     end
-    return true
 end
 
 function test_lwpclocal()
     scenarioname = "homogeneous1"
     computejob = Local(scenarioname, ".", "C:\\LWPCv21\\lwpm.exe")
-    LWPC.run(scenarioname*".json", computejob)
-    LWPC.process(scenarioname*".json", computejob)
-end
-
-function test_batchrunjob()
-    scenarioname = "batchbasic"
-    computejob = LocalParallel(scenarioname, ".", "C:\\LWPCv21\\lwpm.exe", 4)
-
-    logfile = "C:\\LWPCv21_1\\cases\\1.log"
-
-    s = LWMS.parse(scenarioname*".json")
-    LWPC._buildrunjob(s.inputs[1], computejob)
-    LWPC.readlog(logfile)
-end
-
-function test_lwpclocalparallel()
-    scenarioname = "batchbasic"
-    computejob = LocalParallel(scenarioname, ".", "C:\\LWPCv21\\lwpm.exe", 4)
-
     LWPC.run(scenarioname*".json", computejob)
     LWPC.process(scenarioname*".json", computejob)
 end
@@ -186,23 +160,24 @@ end
 
     @testset "Utils" begin
         @test PropagationModelPrep.rounduprange(2314.2e3) == 4000e3
-        @test test_unwrap()
+        test_unwrap()
     end
 
     # TODO: Toggle EMP2D and LWPC tests
     @testset "EMP2D" begin
-        @test test_emp2dinputs()
+        test_emp2dinputs()
 
         @test_logs (:info,
-            "Updating computejob runname to homogeneous1") test_mismatchedrunnames()
+            "Updating computejob runname to homogeneous1") mismatchedrunnames()
         @test_logs (:info,
             "Running in homogeneous2/homogeneous1/") (:info,
-            "Creating homogeneous2/homogeneous1/") test_newrundir()
-        @test_throws ErrorException test_filename_error()
+            "Creating homogeneous2/homogeneous1/") newrundir()
+        @test_throws ErrorException filename_error()
     end
 
     @testset "LWPC" begin
-        @test test_lwpclocal()
+        # @test test_lwpclocal()
+        # TODO
     end
 
     # Cleanup

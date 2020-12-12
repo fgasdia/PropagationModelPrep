@@ -5,8 +5,8 @@ using Reexport
 using Interpolations
 using ProgressMeter
 
-using LongwaveModeSolver
-const LWMS = LongwaveModeSolver
+using LongwaveModePropagator
+const LMP = LongwaveModePropagator
 
 include("utils.jl")
 include("ComputeJobs.jl")

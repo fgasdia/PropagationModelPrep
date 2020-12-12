@@ -5,8 +5,8 @@ using JSON3, CSV, DataFrames, Printf
 using UUIDs
 
 using ..PropagationModelPrep
-using ..PropagationModelPrep: rounduprange, unwrap!, LWMS
-using ..LWMS
+using ..PropagationModelPrep: rounduprange, unwrap!, LMP
+using ..LMP
 
 """
     run(file, computejob::ComputeJob, submitjob=true)
@@ -19,7 +19,7 @@ Optionally provide an inputs::Inputs() struct. Otherwise default values are used
 function run(file, computejob::ComputeJob; submitjob=true)
     isfile(file) || error("$file is not a valid file name")
 
-    s = LWMS.parse(file)
+    s = LMP.parse(file)
 
     rundir = computejob.rundir
 
@@ -245,7 +245,7 @@ function readlog(file)
 end
 
 function process(jsonfile, computejob::ComputeJob)
-    s = LWMS.parse(jsonfile)
+    s = LMP.parse(jsonfile)
 
     return process(s, computejob)
 end
@@ -284,7 +284,7 @@ function process(s::BasicInput, computejob::ComputeJob)
 end
 
 function process(jsonfile, computejob::LocalParallel)
-    s = LWMS.parse(jsonfile)
+    s = LMP.parse(jsonfile)
 
     return process(s, computejob)
 end
