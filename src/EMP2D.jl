@@ -450,7 +450,7 @@ function run(file, computejob::ComputeJob; inputs=nothing, submitjob=true)
         max_range = maximum(s.output_ranges)
         max_range = rounduprange(max_range)
 
-        inputs = Inputs(LMP.EARTH_RADIUS, 110e3, 50e3, 500, 250, max_range, 500, [s.frequency])
+        inputs = Inputs(LMPParams().earthradius, 110e3, 50e3, 500, 250, max_range, 500, [s.frequency])
     end
 
     shfiles = build(s, computejob, inputs)
@@ -496,11 +496,11 @@ function prepbuild(s, computejob::ComputeJob, inputs::Inputs)
     origrundir = splitpath(abspath(computejob.rundir))[end]
     if origrundir != computejob.runname
         # Check if computejob rundir path ends with a directory called runname
-        rundir = joinpath(computejob.rundir, computejob.runname)*"/"
+        rundir = joinpath(computejob.rundir, computejob.runname, "")
         computejob.rundir = rundir
         @info "Running in $rundir"
     else
-        rundir = computejob.rundir*"/"
+        rundir = joinpath(computejob.rundir, "")
     end
 
     if !isdir(rundir)

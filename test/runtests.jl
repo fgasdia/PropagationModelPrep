@@ -11,7 +11,7 @@ function generatejson()
     hprimes = [75]
     betas = [0.32]
     b_mags = fill(50e-6, length(segment_ranges))
-    b_dips = fill(90.0, length(segment_ranges))
+    b_dips = fill(π/2.0, length(segment_ranges))
     b_azs = fill(0.0, length(segment_ranges))
     ground_sigmas = [0.001]
     ground_epsrs = [15]
@@ -122,22 +122,22 @@ function test_unwrap()
 end
 
 function mismatchedrunnames()
-    computejob = Summit("homogeneous2", "homogeneous1", 12, "01:00:00", "dummy_exe")
+    computejob = Summit("homogeneous2", "homogeneous1", "dummy_exe", 12, "01:00:00")
     EMP2D.run("homogeneous1.json", computejob; submitjob=false)
 end
 
 function newrundir()
-    computejob = Summit("homogeneous1", "homogeneous2", 12, "01:00:00", "dummy_exe")
+    computejob = Summit("homogeneous1", "homogeneous2", "dummy_exe", 12, "01:00:00")
     EMP2D.run("homogeneous1.json", computejob; submitjob=false)
 end
 
 function filename_error()
-    computejob = Summit("homogeneous1", "homogeneous1", 12, "01:00:00", "dummy_exe")
+    computejob = Summit("homogeneous1", "homogeneous1", "dummy_exe", 12, "01:00:00")
     EMP2D.run("homogeneous999.json", computejob; submitjob=false)
 end
 
 function test_emp2dinputs()
-    computejob = Summit("homogeneous1", "homogeneous1", 12, "01:00:00", "dummy_exe")
+    computejob = Summit("homogeneous1", "homogeneous1", "dummy_exe", 12, "01:00:00")
     inputs = EMP2D.Inputs(6366e3, 110e3, 50e3, 200, 100, 4000e3, 100, [24e3])
     EMP2D.run("homogeneous1.json", computejob; inputs=inputs, submitjob=false)
 
@@ -169,9 +169,10 @@ end
 
         @test_logs (:info,
             "Updating computejob runname to homogeneous1") mismatchedrunnames()
-        @test_logs (:info,
-            "Running in homogeneous2/homogeneous1/") (:info,
-            "Creating homogeneous2/homogeneous1/") newrundir()
+
+        # @info prints with "\" but joinpath has "\\" we effectively "strip" it with printf
+        rundir = joinpath("homogeneous2", "homogeneous1", "")
+        @test_logs (:info, "Running in $rundir") (:info, "Creating $rundir") newrundir()
         @test_throws ErrorException filename_error()
     end
 
