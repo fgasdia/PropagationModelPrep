@@ -5,8 +5,8 @@ using DSP, JSON3
 using Interpolations
 
 using ..PropagationModelPrep
-using ..PropagationModelPrep: rounduprange, unwrap!, LWMS
-using ..LWMS
+using ..PropagationModelPrep: rounduprange, unwrap!, LMP
+using ..LMP
 
 """
     Defaults
@@ -24,7 +24,7 @@ struct Defaults
     sourcealt::Float64
     rsspeed::Float64
 end
-Defaults() = Defaults(20e-6, 50e-6, 10e3, 0, 60000, 5000, -0.75*LWMS.C0)
+Defaults() = Defaults(20e-6, 50e-6, 10e3, 0, 60000, 5000, -0.75*LMP.C0)
 
 """
     Inputs
@@ -169,7 +169,7 @@ function Inputs(Re, maxalt, stepalt, dr1, dr2, range, drange, DFTfreqs,
 
     tstepcoeff = 1.1
     maxdist = sqrt(range^2 + maxalt^2)
-    tsteps = floor(Int32, tstepcoeff*maxdist/LWMS.C0/dt)
+    tsteps = floor(Int32, tstepcoeff*maxdist/LMP.C0/dt)
     setfield!(s, :tsteps, Int32(tsteps))
 
     length(savefields) == 6 || error("`savefields` must be length 6")
@@ -444,13 +444,13 @@ Optionally provide an inputs::Inputs() struct. Otherwise default values are used
 function run(file, computejob::ComputeJob; inputs=nothing, submitjob=true)
     isfile(file) || error("$file is not a valid file name")
 
-    s = LWMS.parse(file)
+    s = LMP.parse(file)
 
     if isnothing(inputs)
         max_range = maximum(s.output_ranges)
         max_range = rounduprange(max_range)
 
-        inputs = Inputs(LWMS.EARTH_RADIUS, 110e3, 50e3, 500, 250, max_range, 500, [s.frequency])
+        inputs = Inputs(LMP.EARTH_RADIUS, 110e3, 50e3, 500, 250, max_range, 500, [s.frequency])
     end
 
     shfiles = build(s, computejob, inputs)
@@ -561,11 +561,11 @@ function build(s::BasicInput, computejob::ComputeJob, inputs::Inputs)
         end
 
         # Electron density profile
-        neprofile = LWMS.waitprofile.(altitudes, s.hprimes[i], s.betas[i], cutoff_low=50e3, threshold=3e9)
+        neprofile = LMP.waitprofile.(altitudes, s.hprimes[i], s.betas[i], cutoff_low=50e3, threshold=3e9)
         ne[:,segment_begin_idx:segment_end_idx] .= neprofile
 
         # Electron collision profile
-        nuprofile = LWMS.electroncollisionfrequency.(altitudes)
+        nuprofile = LMP.electroncollisionfrequency.(altitudes)
         nu[:,segment_begin_idx:segment_end_idx] .= nuprofile
 
         # Ground profile
@@ -826,7 +826,7 @@ function process(path)
     amp = 20*log10.(dfts.Er.amp/1e-6)  # dB μV/m
     amp .-= maximum(amp)
 
-    phase = rad2deg.(dfts.Er.phase) + (360*freq/LWMS.C0*dist)
+    phase = rad2deg.(dfts.Er.phase) + (360*freq/LMP.C0*dist)
 
     # 2D FDTD numerical dispersion correction
     p = [0.00136588, -0.026108, 0.154035]
@@ -845,7 +845,7 @@ function process(path)
         description = "emp2d results"
         datetime = Dates.now()
     else
-        s = LWMS.parse(jsonfile)
+        s = LMP.parse(jsonfile)
         name = s.name
         description = s.description
         datetime = s.datetime
