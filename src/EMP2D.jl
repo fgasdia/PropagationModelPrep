@@ -810,6 +810,49 @@ Read `inputs.dat` and `dfts.dat` in directory `path` and return a `BasicOutput`
 with amplitude in dB μV/m and phase in degrees corrected for dispersion.
 """
 function process(path)
+
+    # Predetermine values for writing output
+    fullpath = abspath(path)
+    pathname = splitpath(fullpath)[end]  # proxy for filename
+
+    jsonfile = joinpath(fullpath, pathname*".json")
+
+    if !isfile(jsonfile)
+        @info "$jsonfile not found. Assuming run name is $pathname."
+        name = pathname
+        description = "emp2d results"
+        datetime = Dates.now()
+    else
+        s = LMP.parse(jsonfile)
+        name = s.name
+        description = s.description
+        datetime = s.datetime
+    end
+
+    # Determine if run completed and if not, return a NaN output
+    dftfile = joinpath(path, "dft.dat")
+    if !isfile(dftfile)
+        @info "$dftfile not found. Model run may not have completed."
+
+        output = BasicOutput()
+        output.name = name
+        output.description = description
+        output.datetime = datetime
+
+        output.output_ranges = [NaN]
+        output.amplitude = [NaN]
+        output.phase = [NaN]
+
+        json_str = JSON3.write(output)
+
+        open(joinpath(path,name*"_emp2d.json"), "w") do f
+            write(f, json_str)
+        end
+
+        return output
+    end
+
+    # Otherwise, let's process the results
     dfts = readdfts(path)
     inputs = readinputs(path)
 
@@ -834,23 +877,6 @@ function process(path)
     phase += k*dist_km*drange_km^2
 
     # Create output
-    fullpath = abspath(path)
-    pathname = splitpath(fullpath)[end]  # proxy for filename
-
-    jsonfile = joinpath(fullpath, pathname*".json")
-
-    if !isfile(jsonfile)
-        @info "$jsonfile not found. Assuming run name is $pathname."
-        name = pathname
-        description = "emp2d results"
-        datetime = Dates.now()
-    else
-        s = LMP.parse(jsonfile)
-        name = s.name
-        description = s.description
-        datetime = s.datetime
-    end
-
     output = BasicOutput()
     output.name = name
     output.description = description
