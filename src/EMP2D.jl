@@ -839,9 +839,9 @@ function process(path)
         output.description = description
         output.datetime = datetime
 
-        output.output_ranges = [NaN]
-        output.amplitude = [NaN]
-        output.phase = [NaN]
+        output.output_ranges = [0.0]
+        output.amplitude = [0.0]
+        output.phase = [0.0]
 
         json_str = JSON3.write(output)
 
