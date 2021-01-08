@@ -1,7 +1,7 @@
 module EMP2D
 
-using Dates
-using DSP, JSON3
+using Dates, Statistics
+using DSP, JSON3, Parameters
 using Interpolations
 
 using ..PropagationModelPrep
@@ -11,20 +11,19 @@ using ..LMP
 """
     Defaults
 
-Struct to hold some default values for EMP2D. Instantiated as `Defaults()`.
+Parameters struct to hold some default values for EMP2D.
 
 Currently this only holds values related to the emp source.
 """
-struct Defaults
-    taur::Float64
-    tauf::Float64
-    I0::Float64
-    Ic::Float64
-    fcut::Float64
-    sourcealt::Float64
-    rsspeed::Float64
+@with_kw struct Defaults
+    taur::Float64 = 20e-6
+    tauf::Float64 = 50e-6
+    I0::Float64 = 10e3
+    Ic::Float64 = 0.0
+    fcut::Float64 = 60000.0
+    sourcealt::Float64 = 5000.0
+    rsspeed::Float64 = -0.75*LMP.C0
 end
-Defaults() = Defaults(20e-6, 50e-6, 10e3, 0, 60000, 5000, -0.75*LMP.C0)
 
 """
     Inputs
@@ -200,15 +199,30 @@ mutable struct Source
 end
 
 """
-    Source(inputs::Inputs)
+    Source(inputs::Inputs, def=Defaults(), type=:linear_exponential)
 
-Outer constructor for the `Source` struct. This will automatically generate an
-emp source suitable for emp2d given an `Inputs` struct.
+Outer constructor for the `Source` struct. This will generate an emp source suitable
+for emp2d given `inputs`.
+
+`type` specifies the function used to generate the source:
+
+|        `type`       |            function          |
+|:--------------------|:-----------------------------|
+| :linear_exponential | [`linear_exponential`](@ref) |
+| :ricker             | [`ricker`](@ref)             |
+
+`:linear_exponential` is the standard source used by EMP2D in the past and is therefore the
+default, but `:ricker` has better characteristics as a pulse, especially in the LF band.
 """
-function Source(inputs::Inputs)
+function Source(inputs::Inputs, def=Defaults(), type=:linear_exponential)
     s = Source()
 
-    source = create_emp_source(Defaults(), inputs)
+    if type === :linear_exponential
+        source = linear_exponential(def, inputs)
+    elseif type === :ricker
+        source = ricker(def, inputs)
+    end
+
     nt_source, nalt_source = size(source)
 
     setfield!(s, :nalt_source, Int32(nalt_source))
@@ -486,7 +500,7 @@ function submitandrun(shfiles::AbstractVector, computejob::ComputeJob)
     end
 end
 
-function prepbuild(s, computejob::ComputeJob, inputs::Inputs)
+function prepbuild!(s, computejob::ComputeJob, inputs::Inputs)
     if computejob.runname != s.name
         @info "Updating computejob runname to $(s.name)"
         computejob.runname = s.name
@@ -524,11 +538,13 @@ end
 """
     build(s::BasicInput, computejob::ComputeJob, inputs::Inputs)
 
-This is essentially a "private" function that sets default parameters for emp2d
-and generates the necessary input files.
+Set default parameters for emp2d and generate the necessary input files.
+
+If any of `inputs.DFTfreqs` is greater than 50 kHz, the [`ricker`](@ref) source is used.
+Otherwise, the [`linear_exponential`](@ref) source is used.
 """
 function build(s::BasicInput, computejob::ComputeJob, inputs::Inputs)
-    prepbuild(s, computejob, inputs)
+    prepbuild!(s, computejob, inputs)
 
     all(s.b_dips .≈ π/2) || @warn "Segment magnetic field is not vertical"
     length(unique(s.b_mags)) == 1 || @warn "Magnetic field is not homogeneous"
@@ -573,7 +589,14 @@ function build(s::BasicInput, computejob::ComputeJob, inputs::Inputs)
         gepsilon[segment_begin_idx:segment_end_idx] .= s.ground_epsrs[i]
     end
 
-    source = Source(inputs)
+    maxf = maximum(inputs.DFTfreqs)
+    if maxf > 50e3
+        def = Defaults(taur=2/maxf)
+        source = Source(inputs, def, :ricker)
+    else
+        source = Source(inputs)
+    end
+
     ground = Ground()
     ground.gsigma = gsigma
     ground.gepsilon = gepsilon
@@ -583,7 +606,7 @@ function build(s::BasicInput, computejob::ComputeJob, inputs::Inputs)
     writeinputs(inputs, path=rundir)
     writesource(source, path=rundir)
     writeground(ground, path=rundir)
-    writebfield(s.b_mags[1], inputs, path=rundir)
+    writebfield(first(s.b_mags), inputs, path=rundir)
     writene(ne, path=rundir)
     writeni(ne, path=rundir)
     writenu(nu, path=rundir)
@@ -600,7 +623,7 @@ This is essentially a "private" function that sets default parameters for emp2d
 and generates the necessary input files.
 """
 function build(s::TableInput, computejob::ComputeJob, inputs::Inputs)
-    prepbuild(s, computejob, inputs)
+    prepbuild!(s, computejob, inputs)
 
     all(s.b_dips .≈ π/2) || @warn "Segment magnetic field is not vertical"
     length(unique(s.b_mags)) == 1 || @warn "Magnetic field is not homogeneous"
@@ -645,7 +668,14 @@ function build(s::TableInput, computejob::ComputeJob, inputs::Inputs)
         gepsilon[segment_begin_idx:segment_end_idx] .= s.ground_epsrs[i]
     end
 
-    source = Source(inputs)
+    maxf = maximum(inputs.DFTfreqs)
+    if maxf > 50e3
+        def = Defaults(taur=2/maxf)
+        source = Source(inputs, def, :ricker)
+    else
+        source = Source(inputs)
+    end
+
     ground = Ground()
     ground.gsigma = gsigma
     ground.gepsilon = gepsilon
@@ -667,13 +697,13 @@ end
 
 
 """
-    create_emp_source(def::Defaults, in::Inputs)
+    linear_exponential(def::Defaults, in::Inputs)
 
 Create a standard emp source as a current waveform with linear rise and exponential
 decay, which is then filtered with a lowpass filter according to the parameters in
 `def`.
 """
-function create_emp_source(def::Defaults, in::Inputs)
+function linear_exponential(def::Defaults, in::Inputs)
     Iin = zeros(in.tsteps)
 
     # Current waveform: linear rise, exp decay
@@ -681,7 +711,8 @@ function create_emp_source(def::Defaults, in::Inputs)
         if t*in.dt < def.taur
             Iin[t] = def.I0*t*in.dt/def.taur
         else
-            Iin[t] = def.I0*exp(-(t*in.dt-def.taur)^2/def.tauf^2) + def.Ic*(1 - exp(-(t*in.dt-def.taur)^2/def.tauf^2))
+            Iin[t] = def.I0*exp(-(t*in.dt-def.taur)^2/def.tauf^2) +
+                def.Ic*(1 - exp(-(t*in.dt-def.taur)^2/def.tauf^2))
         end
     end
 
@@ -699,6 +730,57 @@ function create_emp_source(def::Defaults, in::Inputs)
     Iin = [Iin2; zeros(2*round(Int,def.sourcealt/abs(def.rsspeed)/in.dt))]
 
     Iin[Iin .< 1e-20] .= 1e-20
+
+    # Spatial variation
+    satop = in.nground + floor(Int, def.sourcealt/in.dr1) + 1
+
+    source = repeat(Iin, 1, satop)
+
+    return source
+end
+
+"""
+    ricker(def::Defaults, in::Inputs)
+
+Create a Ricker Wavelet (Mexican Hat) current source.
+
+The Ricker Wavelet is a pulsed source which can introduce a wide spectrum of frequencies.
+It resembles the second derivative of a Gaussian.
+The wavelet only has two parameters: 1) `in.DFTfreqs` sets the "peak frequency"
+and 2) `def.taur` is the temporal delay.
+
+The peak frequency is the frequency with maximum energy in the spectrum of the source pulse.
+If there is more than one entry in `DFTfreqs`, the peak frequency is the `mean` of the
+DFT frequencies.
+
+The wavelet function asymptotically approaches zero on both sides of the peak.
+There is a small transient at ``t = 0`` if the function value is not exactly zero (which
+it's not). However, if the delay is ``1/fp`` where ``fp`` is the peak frequency, then
+the function value at ``t = 0`` is less than `1e-3`.
+If the delay is ``2/fp``, then it is within `1e-15`.
+
+# References
+
+https://eecs.wsu.edu/~schneidj/ufdtd/chap5.pdf, eq. 5.15
+"""
+function ricker(def::Defaults, in::Inputs)
+    Iin = zeros(in.tsteps)
+
+    # Peak frequency
+    if length(in.DFTfreqs) == 1
+        fp = only(in.DFTfreqs)
+    else
+        fp = mean(in.DFTfreqs)
+    end
+
+    # Current waveform
+    for i = 1:in.tsteps
+        t = (i-1)*in.dt
+        Iin[i] = (1 - 2*(π*fp*(t - def.taur))^2)*exp(-(π*fp*(t - def.taur))^2)
+    end
+
+    # Rescale to peak current
+    Iin .= Iin./maximum(Iin).*def.I0
 
     # Spatial variation
     satop = in.nground + floor(Int, def.sourcealt/in.dr1) + 1
