@@ -591,7 +591,7 @@ function build(s::BasicInput, computejob::ComputeJob, inputs::Inputs)
 
     maxf = maximum(inputs.DFTfreqs)
     if maxf > 50e3
-        def = Defaults(taur=2/maxf)
+        def = Defaults(taur=2/maxf, I0=10e5)
         source = Source(inputs, def, :ricker)
     else
         source = Source(inputs)
@@ -670,7 +670,7 @@ function build(s::TableInput, computejob::ComputeJob, inputs::Inputs)
 
     maxf = maximum(inputs.DFTfreqs)
     if maxf > 50e3
-        def = Defaults(taur=2/maxf)
+        def = Defaults(taur=2/maxf, I0=10e5)
         source = Source(inputs, def, :ricker)
     else
         source = Source(inputs)
