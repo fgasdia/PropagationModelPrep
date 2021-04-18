@@ -1,6 +1,5 @@
 module PropagationModelPrep
 
-using Distributed
 using Reexport
 using Interpolations
 using ProgressMeter

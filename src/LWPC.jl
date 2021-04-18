@@ -1,8 +1,7 @@
 module LWPC
 
-using Distributed
-using JSON3, CSV, DataFrames, Printf
-using UUIDs
+using Printf, Random
+using JSON3, CSV, DataFrames
 
 using ..PropagationModelPrep
 using ..PropagationModelPrep: rounduprange, unwrap!, LMP
@@ -52,6 +51,16 @@ function build(s::BasicInput, computejob::ComputeJob)
     return nothing
 end
 
+"""
+    randtransmittername()
+
+Return a random ten character `'a':'z'` string to be used as a transmitter name.
+
+If the scenario transmitter frequency doesn't match up with an existing transmitter name
+in LWPC's xmtr.lis, LWPC will break.
+"""
+randtransmittername() = randstring('a':'z', 10)
+
 function writeinp(s::BasicInput, computejob::ComputeJob)
     exepath = computejob.exefile
     lwpcpath, exename = splitdir(exepath)
@@ -73,8 +82,7 @@ function writeinp(s::BasicInput, computejob::ComputeJob)
         ionosphere = "range exponential $runname"
     end
 
-    # Using uuid1() as transmitter name because otherwise if freq doesn't match up with an
-    # existing transmitter name in xmtr.lis, it will break
+    
     endline = "\n"
     open(joinpath(lwpcpath, "cases", runname*".inp"), "w") do f
         write(f, "file-mds    Output\\", endline)
@@ -83,7 +91,7 @@ function writeinp(s::BasicInput, computejob::ComputeJob)
         write(f, "file-ndx    cases\\", endline)
         write(f, "case-id     $runname", endline)
         write(f, "tx          $runname", endline)
-        write(f, "tx-data     $(uuid1())  $freq  0.0  0.0  100.0  0.0  0.000  0.0", endline)
+        write(f, "tx-data     $(randtransmittername())  $freq  0.0  0.0  100.0  0.0  0.000  0.0", endline)
         write(f, "receivers   0.0000  0.0000", endline)
         write(f, "range-max   $max_range", endline)
         write(f, "ionosphere  $ionosphere", endline)
@@ -138,11 +146,7 @@ function writendx(s::BasicInput, computejob::ComputeJob)
     return nothing
 end
 
-function runjob(computejob::Local)
-    exepath = computejob.exefile
-    lwpcpath, exename = splitdir(exepath)
-    runname = computejob.runname
-
+function deletefiles(lwpcpath, runname)
     # Delete any files that might already exist in LWPC Output folder for same runname
     output_files = readdir(joinpath(lwpcpath, "Output"))
     for file in output_files
@@ -154,6 +158,15 @@ function runjob(computejob::Local)
 
     logfilepath = joinpath(lwpcpath, "cases", runname*".log")
     isfile(logfilepath) && rm(logfilepath)
+end
+deletefiles(cj::Local) = deletefiles(splitdir(cj.exefile)[1], cj.runname)
+
+function runjob(computejob::Local)
+    exepath = computejob.exefile
+    lwpcpath, exename = splitdir(exepath)
+    runname = computejob.runname
+
+    deletefiles(lwpcath, runname)
 
     input = joinpath("cases", runname)
 

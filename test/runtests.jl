@@ -1,4 +1,4 @@
-using Test, Dates, Distributed
+using Test, Dates
 using JSON3
 using LongwaveModePropagator
 const LMP = LongwaveModePropagator
