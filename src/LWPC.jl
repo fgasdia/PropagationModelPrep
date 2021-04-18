@@ -2,10 +2,11 @@ module LWPC
 
 using Distributed
 using JSON3, CSV, DataFrames, Printf
+using UUIDs
 
 using ..PropagationModelPrep
-using ..PropagationModelPrep: rounduprange, unwrap!, LWMS
-using ..LWMS
+using ..PropagationModelPrep: rounduprange, unwrap!, LMP
+using ..LMP
 
 """
     run(file, computejob::ComputeJob, submitjob=true)
@@ -18,7 +19,7 @@ Optionally provide an inputs::Inputs() struct. Otherwise default values are used
 function run(file, computejob::ComputeJob; submitjob=true)
     isfile(file) || error("$file is not a valid file name")
 
-    s = LWMS.parse(file)
+    s = LMP.parse(file)
 
     rundir = computejob.rundir
 
@@ -57,7 +58,7 @@ function writeinp(s::BasicInput, computejob::ComputeJob)
     runname = computejob.runname
 
     freq = s.frequency/1e3  # in kHz
-    max_range = trunc(Int, rounduprange(maximum(s.output_ranges))/1e3)  # convert to km
+    max_range = ceil(Int, maximum(s.output_ranges)/1e3)  # convert to km
     diffrange = diff(s.output_ranges)
     drange = trunc(Int, diffrange[1]/1e3)  # in km
     length(unique(round.(diffrange))) == 1 || @info "Using drange = $drange km"
@@ -72,6 +73,8 @@ function writeinp(s::BasicInput, computejob::ComputeJob)
         ionosphere = "range exponential $runname"
     end
 
+    # Using uuid1() as transmitter name because otherwise if freq doesn't match up with an
+    # existing transmitter name in xmtr.lis, it will break
     endline = "\n"
     open(joinpath(lwpcpath, "cases", runname*".inp"), "w") do f
         write(f, "file-mds    Output\\", endline)
@@ -80,7 +83,7 @@ function writeinp(s::BasicInput, computejob::ComputeJob)
         write(f, "file-ndx    cases\\", endline)
         write(f, "case-id     $runname", endline)
         write(f, "tx          $runname", endline)
-        write(f, "tx-data     vlftx  $freq  0.0  0.0  100.0  0.0  0.000  0.0", endline)
+        write(f, "tx-data     $(uuid1())  $freq  0.0  0.0  100.0  0.0  0.000  0.0", endline)
         write(f, "receivers   0.0000  0.0000", endline)
         write(f, "range-max   $max_range", endline)
         write(f, "ionosphere  $ionosphere", endline)
@@ -242,7 +245,7 @@ function readlog(file)
 end
 
 function process(jsonfile, computejob::ComputeJob)
-    s = LWMS.parse(jsonfile)
+    s = LMP.parse(jsonfile)
 
     return process(s, computejob)
 end
@@ -281,7 +284,7 @@ function process(s::BasicInput, computejob::ComputeJob)
 end
 
 function process(jsonfile, computejob::LocalParallel)
-    s = LWMS.parse(jsonfile)
+    s = LMP.parse(jsonfile)
 
     return process(s, computejob)
 end

@@ -1,22 +1,18 @@
 using Test, Dates, Distributed
 using JSON3
-using Reexport
-using LongwaveModeSolver
-const LWMS = LongwaveModeSolver
+using LongwaveModePropagator
+const LMP = LongwaveModePropagator
 
 using PropagationModelPrep
-addprocs(4, exeflags="--project")
-@everywhere push!(LOAD_PATH, abspath("../src"))
-@everywhere using PropagationModelPrep
 
 function generatejson()
     # Waveguide definition
     segment_ranges = [0]
     hprimes = [75]
     betas = [0.32]
-    b_mag = fill(50e-6, length(segment_ranges))  # TODO: rename to be consistent (plural?)
-    b_dip = fill(90.0, length(segment_ranges))
-    b_az = fill(0.0, length(segment_ranges))
+    b_mags = fill(50e-6, length(segment_ranges))
+    b_dips = fill(π/2.0, length(segment_ranges))
+    b_azs = fill(0.0, length(segment_ranges))
     ground_sigmas = [0.001]
     ground_epsrs = [15]
 
@@ -26,7 +22,7 @@ function generatejson()
     # Outputs
     output_ranges = collect(0:5e3:2500e3)
 
-    input = LWMS.BasicInput()
+    input = LMP.BasicInput()
     input.name = "homogeneous1"
     input.description = "homogeneous ionosphere"
     input.datetime = Dates.now()
@@ -34,9 +30,9 @@ function generatejson()
     input.segment_ranges = segment_ranges
     input.hprimes = hprimes
     input.betas = betas
-    input.b_mags = b_mag
-    input.b_dips = b_dip
-    input.b_azs = b_az
+    input.b_mags = b_mags
+    input.b_dips = b_dips
+    input.b_azs = b_azs
     input.ground_sigmas = ground_sigmas
     input.ground_epsrs = ground_epsrs
     input.frequency = frequency
@@ -119,63 +115,41 @@ function test_unwrap()
     # Extract phase angle of spiral
     p = atan.(y,x)
 
-    issorted(p) == false
+    @test !issorted(p)
 
     PropagationModelPrep.unwrap!(p)
-    issorted(p) == true || return false
-
-    return true
+    @test issorted(p)
 end
 
-function test_mismatchedrunnames()
-    computejob = Summit("homogeneous2", "homogeneous1", 12, "01:00:00", "dummy_exe")
+function mismatchedrunnames()
+    computejob = Summit("homogeneous2", "homogeneous1", "dummy_exe", 12, "01:00:00")
     EMP2D.run("homogeneous1.json", computejob; submitjob=false)
 end
 
-function test_newrundir()
-    computejob = Summit("homogeneous1", "homogeneous2", 12, "01:00:00", "dummy_exe")
+function newrundir()
+    computejob = Summit("homogeneous1", "homogeneous2", "dummy_exe", 12, "01:00:00")
     EMP2D.run("homogeneous1.json", computejob; submitjob=false)
 end
 
-function test_filename_error()
-    computejob = Summit("homogeneous1", "homogeneous1", 12, "01:00:00", "dummy_exe")
+function filename_error()
+    computejob = Summit("homogeneous1", "homogeneous1", "dummy_exe", 12, "01:00:00")
     EMP2D.run("homogeneous999.json", computejob; submitjob=false)
 end
 
 function test_emp2dinputs()
-    computejob = Summit("homogeneous1", "homogeneous1", 12, "01:00:00", "dummy_exe")
+    computejob = Summit("homogeneous1", "homogeneous1", "dummy_exe", 12, "01:00:00")
     inputs = EMP2D.Inputs(6366e3, 110e3, 50e3, 200, 100, 4000e3, 100, [24e3])
     EMP2D.run("homogeneous1.json", computejob; inputs=inputs, submitjob=false)
 
     testinputs = EMP2D.readinputs("homogeneous1")
     for field in fieldnames(EMP2D.Inputs)
-        getfield(inputs, field) == getfield(testinputs, field) || return false
+        @test getfield(inputs, field) == getfield(testinputs, field)
     end
-    return true
 end
 
 function test_lwpclocal()
     scenarioname = "homogeneous1"
     computejob = Local(scenarioname, ".", "C:\\LWPCv21\\lwpm.exe")
-    LWPC.run(scenarioname*".json", computejob)
-    LWPC.process(scenarioname*".json", computejob)
-end
-
-function test_batchrunjob()
-    scenarioname = "batchbasic"
-    computejob = LocalParallel(scenarioname, ".", "C:\\LWPCv21\\lwpm.exe", 4)
-
-    logfile = "C:\\LWPCv21_1\\cases\\1.log"
-
-    s = LWMS.parse(scenarioname*".json")
-    LWPC._buildrunjob(s.inputs[1], computejob)
-    LWPC.readlog(logfile)
-end
-
-function test_lwpclocalparallel()
-    scenarioname = "batchbasic"
-    computejob = LocalParallel(scenarioname, ".", "C:\\LWPCv21\\lwpm.exe", 4)
-
     LWPC.run(scenarioname*".json", computejob)
     LWPC.process(scenarioname*".json", computejob)
 end
@@ -186,27 +160,31 @@ end
 
     @testset "Utils" begin
         @test PropagationModelPrep.rounduprange(2314.2e3) == 4000e3
-        @test test_unwrap()
+        test_unwrap()
     end
 
     # TODO: Toggle EMP2D and LWPC tests
     @testset "EMP2D" begin
-        @test test_emp2dinputs()
+        test_emp2dinputs()
 
         @test_logs (:info,
-            "Updating computejob runname to homogeneous1") test_mismatchedrunnames()
-        @test_logs (:info,
-            "Running in homogeneous2/homogeneous1/") (:info,
-            "Creating homogeneous2/homogeneous1/") test_newrundir()
-        @test_throws ErrorException test_filename_error()
+            "Updating computejob runname to homogeneous1") mismatchedrunnames()
+
+        # @info prints with "\" but joinpath has "\\" we effectively "strip" it with printf
+        rundir = joinpath("homogeneous2", "homogeneous1", "")
+        @test_logs (:info, "Running in $rundir") (:info, "Creating $rundir") newrundir()
+        @test_throws ErrorException filename_error()
     end
 
     @testset "LWPC" begin
-        @test test_lwpclocal()
+        # @test test_lwpclocal()
+        # TODO
     end
 
     # Cleanup
     rm("homogeneous1", force=true, recursive=true)
     rm("homogeneous2", force=true, recursive=true)
     isfile("batchbasic.json") && rm("batchbasic.json")
+    isfile("homogeneous1.json") && rm("homogeneous1.json")
+    isfile("homogeneous1_lwpc.json") && rm("homogeneous1_lwpc.json")
 end

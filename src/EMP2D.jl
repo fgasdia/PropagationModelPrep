@@ -1,29 +1,29 @@
 module EMP2D
 
-using Dates
-using DSP, JSON3
+using Dates, Statistics
+using DSP, JSON3, Parameters
+using Interpolations
 
 using ..PropagationModelPrep
-using ..PropagationModelPrep: rounduprange, unwrap!
-using ..LWMS
+using ..PropagationModelPrep: rounduprange, unwrap!, LMP
+using ..LMP
 
 """
     Defaults
 
-Struct to hold some default values for EMP2D. Instantiated as `Defaults()`.
+Parameters struct to hold some default values for EMP2D.
 
 Currently this only holds values related to the emp source.
 """
-struct Defaults
-    taur::Float64
-    tauf::Float64
-    I0::Float64
-    Ic::Float64
-    fcut::Float64
-    sourcealt::Float64
-    rsspeed::Float64
+@with_kw struct Defaults
+    taur::Float64 = 20e-6
+    tauf::Float64 = 50e-6
+    I0::Float64 = 10e3
+    Ic::Float64 = 0.0
+    fcut::Float64 = 60000.0
+    sourcealt::Float64 = 5000.0
+    rsspeed::Float64 = -0.75*LMP.C0
 end
-Defaults() = Defaults(20e-6, 50e-6, 10e3, 0, 60000, 5000, -0.75*LWMS.C0)
 
 """
     Inputs
@@ -168,7 +168,7 @@ function Inputs(Re, maxalt, stepalt, dr1, dr2, range, drange, DFTfreqs,
 
     tstepcoeff = 1.1
     maxdist = sqrt(range^2 + maxalt^2)
-    tsteps = floor(Int32, tstepcoeff*maxdist/LWMS.C0/dt)
+    tsteps = floor(Int32, tstepcoeff*maxdist/LMP.C0/dt)
     setfield!(s, :tsteps, Int32(tsteps))
 
     length(savefields) == 6 || error("`savefields` must be length 6")
@@ -199,15 +199,30 @@ mutable struct Source
 end
 
 """
-    Source(inputs::Inputs)
+    Source(inputs::Inputs, def=Defaults(), type=:linear_exponential)
 
-Outer constructor for the `Source` struct. This will automatically generate an
-emp source suitable for emp2d given an `Inputs` struct.
+Outer constructor for the `Source` struct. This will generate an emp source suitable
+for emp2d given `inputs`.
+
+`type` specifies the function used to generate the source:
+
+|        `type`       |            function          |
+|:--------------------|:-----------------------------|
+| :linear_exponential | [`linear_exponential`](@ref) |
+| :ricker             | [`ricker`](@ref)             |
+
+`:linear_exponential` is the standard source used by EMP2D in the past and is therefore the
+default, but `:ricker` has better characteristics as a pulse, especially in the LF band.
 """
-function Source(inputs::Inputs)
+function Source(inputs::Inputs, def=Defaults(), type=:linear_exponential)
     s = Source()
 
-    source = create_emp_source(Defaults(), inputs)
+    if type === :linear_exponential
+        source = linear_exponential(def, inputs)
+    elseif type === :ricker
+        source = ricker(def, inputs)
+    end
+
     nt_source, nalt_source = size(source)
 
     setfield!(s, :nalt_source, Int32(nalt_source))
@@ -390,6 +405,8 @@ Write ne.dat at `path` given electron density array `ne`.
 range grid cells). It can also be flattened vector of the same length.
 """
 function writene(ne::Array{Float64}; path="")
+    ne[ne .> 3e9] .= 3e9
+
     open(joinpath(path,"ne.dat"), "w") do f
         write(f, permutedims(ne))  # for c++
     end
@@ -441,8 +458,49 @@ Optionally provide an inputs::Inputs() struct. Otherwise default values are used
 function run(file, computejob::ComputeJob; inputs=nothing, submitjob=true)
     isfile(file) || error("$file is not a valid file name")
 
-    s = LWMS.parse(file)
+    s = LMP.parse(file)
 
+    if isnothing(inputs)
+        max_range = maximum(s.output_ranges)
+        max_range = rounduprange(max_range)
+
+        inputs = Inputs(LMPParams().earthradius, 110e3, 50e3, 500, 250, max_range, 500, [s.frequency])
+    end
+
+    shfiles = build(s, computejob, inputs)
+
+    if submitjob
+        submitandrun(shfiles, computejob)
+    end
+
+    return nothing
+end
+
+function submitandrun(shfile, computejob::ComputeJob)
+    rundir, shfile = splitdir(shfile)
+    exefile = computejob.exefile
+    exename = splitdir(exefile)[2]
+    newexefile = joinpath(rundir, exename)
+    isfile(newexefile) || cp(exefile, newexefile)
+    runjob(computejob, shfile)
+end
+
+function submitandrun(shfiles::AbstractVector, computejob::ComputeJob)
+    exefile = computejob.exefile
+    exename = splitdir(exefile)[2]
+
+    for shfile in shfiles
+        rundir, shfile = splitdir(shfile)
+        runname, shext = splitext(shfile)
+
+        newexefile = joinpath(rundir, exename)
+        isfile(newexefile) || cp(exefile, newexefile)
+        computejob.runname = runname
+        runjob(computejob, shfile)
+    end
+end
+
+function prepbuild!(s, computejob::ComputeJob, inputs::Inputs)
     if computejob.runname != s.name
         @info "Updating computejob runname to $(s.name)"
         computejob.runname = s.name
@@ -452,10 +510,11 @@ function run(file, computejob::ComputeJob; inputs=nothing, submitjob=true)
     origrundir = splitpath(abspath(computejob.rundir))[end]
     if origrundir != computejob.runname
         # Check if computejob rundir path ends with a directory called runname
-        rundir = joinpath(computejob.rundir, computejob.runname)*"/"
+        rundir = joinpath(computejob.rundir, computejob.runname, "")
+        computejob.rundir = rundir
         @info "Running in $rundir"
     else
-        rundir = computejob.rundir*"/"
+        rundir = joinpath(computejob.rundir, "")
     end
 
     if !isdir(rundir)
@@ -464,36 +523,31 @@ function run(file, computejob::ComputeJob; inputs=nothing, submitjob=true)
         mkpath(rundir)
     end
 
-    if isnothing(inputs)
-        max_range = maximum(s.output_ranges)
-        max_range = rounduprange(max_range)
-
-        inputs = Inputs(LWMS.EARTH_RADIUS, 110e3, 50e3, 500, 250, max_range, 500, [s.frequency])
-    end
-
-    shfile = build(s, computejob, inputs)
-
-    if submitjob
-        exefile = computejob.exefile
-        exename = splitdir(exefile)[2]
-        newexefile = joinpath(rundir, exename)
-        isfile(newexefile) || cp(exefile, newexefile)
-        runjob(computejob, shfile)
-    end
-
     return nothing
+end
+
+function build(s::BatchInput, computejob::ComputeJob, inputs::Inputs)
+    shfiles = Vector{String}(undef, length(s.inputs))
+    for i in eachindex(s.inputs)
+        # computejob is mutated by build, so we copy the original first
+        shfiles[i] = build(s.inputs[i], copy(computejob), inputs)
+    end
+    return shfiles
 end
 
 """
     build(s::BasicInput, computejob::ComputeJob, inputs::Inputs)
 
-This is essentially a "private" function that sets default parameters for emp2d
-and generates the necessary input files.
+Set default parameters for emp2d and generate the necessary input files.
+
+If any of `inputs.DFTfreqs` is greater than 50 kHz, the [`ricker`](@ref) source is used.
+Otherwise, the [`linear_exponential`](@ref) source is used.
 """
 function build(s::BasicInput, computejob::ComputeJob, inputs::Inputs)
+    prepbuild!(s, computejob, inputs)
 
-    all(s.b_dip .≈ 90) || @warn "Segment magnetic field is not vertical"
-    length(unique(s.b_mag)) == 1 || @warn "Magnetic field is not homogeneous"
+    all(s.b_dips .≈ π/2) || @warn "Segment magnetic field is not vertical"
+    length(unique(s.b_mags)) == 1 || @warn "Magnetic field is not homogeneous"
 
     # Useful values
     r, dr, th = generategrid(inputs)  # r is along radial direction (height)
@@ -523,19 +577,26 @@ function build(s::BasicInput, computejob::ComputeJob, inputs::Inputs)
         end
 
         # Electron density profile
-        neprofile = LWMS.waitprofile.(altitudes, s.hprimes[i], s.betas[i], cutoff_low=50e3, threshold=3e9)
+        neprofile = LMP.waitprofile.(altitudes, s.hprimes[i], s.betas[i], cutoff_low=50e3, threshold=3e9)
         ne[:,segment_begin_idx:segment_end_idx] .= neprofile
 
         # Electron collision profile
-        nuprofile = LWMS.electroncollisionfrequency.(altitudes)
+        nuprofile = LMP.electroncollisionfrequency.(altitudes)
         nu[:,segment_begin_idx:segment_end_idx] .= nuprofile
 
         # Ground profile
         gsigma[segment_begin_idx:segment_end_idx] .= s.ground_sigmas[i]
-        gepsilon[segment_begin_idx:segment_end_idx] .= s.ground_epsr[i]
+        gepsilon[segment_begin_idx:segment_end_idx] .= s.ground_epsrs[i]
     end
 
-    source = Source(inputs)
+    maxf = maximum(inputs.DFTfreqs)
+    if maxf > 50e3
+        def = Defaults(taur=2/maxf, I0=10e5)
+        source = Source(inputs, def, :ricker)
+    else
+        source = Source(inputs)
+    end
+
     ground = Ground()
     ground.gsigma = gsigma
     ground.gepsilon = gepsilon
@@ -545,7 +606,7 @@ function build(s::BasicInput, computejob::ComputeJob, inputs::Inputs)
     writeinputs(inputs, path=rundir)
     writesource(source, path=rundir)
     writeground(ground, path=rundir)
-    writebfield(s.b_mag[1], inputs, path=rundir)
+    writebfield(first(s.b_mags), inputs, path=rundir)
     writene(ne, path=rundir)
     writeni(ne, path=rundir)
     writenu(nu, path=rundir)
@@ -556,13 +617,93 @@ function build(s::BasicInput, computejob::ComputeJob, inputs::Inputs)
 end
 
 """
-    create_emp_source(def::Defaults, in::Inputs)
+    build(s::TableInput, computejob::ComputeJob, inputs::Inputs)
+
+This is essentially a "private" function that sets default parameters for emp2d
+and generates the necessary input files.
+"""
+function build(s::TableInput, computejob::ComputeJob, inputs::Inputs)
+    prepbuild!(s, computejob, inputs)
+
+    all(s.b_dips .≈ π/2) || @warn "Segment magnetic field is not vertical"
+    length(unique(s.b_mags)) == 1 || @warn "Magnetic field is not homogeneous"
+
+    # Useful values
+    r, dr, th = generategrid(inputs)  # r is along radial direction (height)
+    altitudes = r .- inputs.Re
+
+    rr = length(r)
+    hh = length(th)
+
+    max_range = inputs.range
+    drange = inputs.drange
+    rangevec = range(0, max_range, length=hh)
+
+    # Fill in values for each waveguide segment
+    ne = Matrix{Float64}(undef, rr, hh)
+    nu = similar(ne)
+    gsigma = Vector{Float64}(undef, hh)
+    gepsilon = similar(gsigma)
+
+    for i in eachindex(s.segment_ranges)
+        # Find closest match of segment range to rangevec
+        segment_begin_idx = argmin(abs.(rangevec .- s.segment_ranges[i]))
+        if i == lastindex(s.segment_ranges)
+            segment_end_idx = hh
+        else
+            segment_end_range = s.segment_ranges[i+1]
+            segment_end_idx = argmin(abs.(rangevec .- segment_end_range))
+        end
+
+        # Electron density profile
+        density_itp = LinearInterpolation(s.altitude, s.density[i], extrapolation_bc=Line())
+        ne[:,segment_begin_idx:segment_end_idx] .= density_itp(altitudes)
+
+        # Electron collision profile
+        collision_itp = LinearInterpolation(s.altitude, s.collision_frequency[i], extrapolation_bc=Line())
+        nu[:,segment_begin_idx:segment_end_idx] .= collision_itp(altitudes)
+
+        # Ground profile
+        gsigma[segment_begin_idx:segment_end_idx] .= s.ground_sigmas[i]
+        gepsilon[segment_begin_idx:segment_end_idx] .= s.ground_epsrs[i]
+    end
+
+    maxf = maximum(inputs.DFTfreqs)
+    if maxf > 50e3
+        def = Defaults(taur=2/maxf, I0=10e5)
+        source = Source(inputs, def, :ricker)
+    else
+        source = Source(inputs)
+    end
+
+    ground = Ground()
+    ground.gsigma = gsigma
+    ground.gepsilon = gepsilon
+
+    rundir = computejob.rundir
+
+    writeinputs(inputs, path=rundir)
+    writesource(source, path=rundir)
+    writeground(ground, path=rundir)
+    writebfield(s.b_mags[1], inputs, path=rundir)
+    writene(ne, path=rundir)
+    writeni(ne, path=rundir)
+    writenu(nu, path=rundir)
+
+    shfile = writeshfile(computejob)
+
+    return shfile
+end
+
+
+"""
+    linear_exponential(def::Defaults, in::Inputs)
 
 Create a standard emp source as a current waveform with linear rise and exponential
 decay, which is then filtered with a lowpass filter according to the parameters in
 `def`.
 """
-function create_emp_source(def::Defaults, in::Inputs)
+function linear_exponential(def::Defaults, in::Inputs)
     Iin = zeros(in.tsteps)
 
     # Current waveform: linear rise, exp decay
@@ -570,7 +711,8 @@ function create_emp_source(def::Defaults, in::Inputs)
         if t*in.dt < def.taur
             Iin[t] = def.I0*t*in.dt/def.taur
         else
-            Iin[t] = def.I0*exp(-(t*in.dt-def.taur)^2/def.tauf^2) + def.Ic*(1 - exp(-(t*in.dt-def.taur)^2/def.tauf^2))
+            Iin[t] = def.I0*exp(-(t*in.dt-def.taur)^2/def.tauf^2) +
+                def.Ic*(1 - exp(-(t*in.dt-def.taur)^2/def.tauf^2))
         end
     end
 
@@ -588,6 +730,57 @@ function create_emp_source(def::Defaults, in::Inputs)
     Iin = [Iin2; zeros(2*round(Int,def.sourcealt/abs(def.rsspeed)/in.dt))]
 
     Iin[Iin .< 1e-20] .= 1e-20
+
+    # Spatial variation
+    satop = in.nground + floor(Int, def.sourcealt/in.dr1) + 1
+
+    source = repeat(Iin, 1, satop)
+
+    return source
+end
+
+"""
+    ricker(def::Defaults, in::Inputs)
+
+Create a Ricker Wavelet (Mexican Hat) current source.
+
+The Ricker Wavelet is a pulsed source which can introduce a wide spectrum of frequencies.
+It resembles the second derivative of a Gaussian.
+The wavelet only has two parameters: 1) `in.DFTfreqs` sets the "peak frequency"
+and 2) `def.taur` is the temporal delay.
+
+The peak frequency is the frequency with maximum energy in the spectrum of the source pulse.
+If there is more than one entry in `DFTfreqs`, the peak frequency is the `mean` of the
+DFT frequencies.
+
+The wavelet function asymptotically approaches zero on both sides of the peak.
+There is a small transient at ``t = 0`` if the function value is not exactly zero (which
+it's not). However, if the delay is ``1/fp`` where ``fp`` is the peak frequency, then
+the function value at ``t = 0`` is less than `1e-3`.
+If the delay is ``2/fp``, then it is within `1e-15`.
+
+# References
+
+https://eecs.wsu.edu/~schneidj/ufdtd/chap5.pdf, eq. 5.15
+"""
+function ricker(def::Defaults, in::Inputs)
+    Iin = zeros(in.tsteps)
+
+    # Peak frequency
+    if length(in.DFTfreqs) == 1
+        fp = only(in.DFTfreqs)
+    else
+        fp = mean(in.DFTfreqs)
+    end
+
+    # Current waveform
+    for i = 1:in.tsteps
+        t = (i-1)*in.dt
+        Iin[i] = (1 - 2*(π*fp*(t - def.taur))^2)*exp(-(π*fp*(t - def.taur))^2)
+    end
+
+    # Rescale to peak current
+    Iin .= Iin./maximum(Iin).*def.I0
 
     # Spatial variation
     satop = in.nground + floor(Int, def.sourcealt/in.dr1) + 1
@@ -699,6 +892,49 @@ Read `inputs.dat` and `dfts.dat` in directory `path` and return a `BasicOutput`
 with amplitude in dB μV/m and phase in degrees corrected for dispersion.
 """
 function process(path)
+
+    # Predetermine values for writing output
+    fullpath = abspath(path)
+    pathname = splitpath(fullpath)[end]  # proxy for filename
+
+    jsonfile = joinpath(fullpath, pathname*".json")
+
+    if !isfile(jsonfile)
+        @info "$jsonfile not found. Assuming run name is $pathname."
+        name = pathname
+        description = "emp2d results"
+        datetime = Dates.now()
+    else
+        s = LMP.parse(jsonfile)
+        name = s.name
+        description = s.description
+        datetime = s.datetime
+    end
+
+    # Determine if run completed and if not, return a NaN output
+    dftfile = joinpath(path, "dft.dat")
+    if !isfile(dftfile)
+        @info "$dftfile not found. Model run may not have completed."
+
+        output = BasicOutput()
+        output.name = name
+        output.description = description
+        output.datetime = datetime
+
+        output.output_ranges = [0.0]
+        output.amplitude = [0.0]
+        output.phase = [0.0]
+
+        json_str = JSON3.write(output)
+
+        open(joinpath(path,name*"_emp2d.json"), "w") do f
+            write(f, json_str)
+        end
+
+        return output
+    end
+
+    # Otherwise, let's process the results
     dfts = readdfts(path)
     inputs = readinputs(path)
 
@@ -715,7 +951,7 @@ function process(path)
     amp = 20*log10.(dfts.Er.amp/1e-6)  # dB μV/m
     amp .-= maximum(amp)
 
-    phase = rad2deg.(dfts.Er.phase) + (360*freq/LWMS.C0*dist)
+    phase = rad2deg.(dfts.Er.phase) + (360*freq/LMP.C0*dist)
 
     # 2D FDTD numerical dispersion correction
     p = [0.00136588, -0.026108, 0.154035]
@@ -723,23 +959,6 @@ function process(path)
     phase += k*dist_km*drange_km^2
 
     # Create output
-    fullpath = abspath(path)
-    pathname = splitpath(fullpath)[end]  # proxy for filename
-
-    jsonfile = joinpath(fullpath, pathname*".json")
-
-    if !isfile(jsonfile)
-        @info "$jsonfile not found. Assuming run name is $pathname."
-        name = pathname
-        description = "emp2d results"
-        datetime = Dates.now()
-    else
-        s = LWMS.parse(jsonfile)
-        name = s.name
-        description = s.description
-        datetime = s.datetime
-    end
-
     output = BasicOutput()
     output.name = name
     output.description = description
