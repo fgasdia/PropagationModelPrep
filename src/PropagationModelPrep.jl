@@ -10,7 +10,6 @@ const LMP = LongwaveModePropagator
 
 include("utils.jl")
 include("ComputeJobs.jl")
-include("MSISatmosphere.jl")
 
 export ComputeJob, Summit, Local, LocalParallel
 export writeshfile, runjob
