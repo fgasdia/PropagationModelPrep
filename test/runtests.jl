@@ -177,7 +177,7 @@ end
     end
 
     @testset "LWPC" begin
-        # @test test_lwpclocal()
+        @test test_lwpclocal()
         # TODO
     end
 

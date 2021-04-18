@@ -7,6 +7,18 @@ using ..PropagationModelPrep
 using ..PropagationModelPrep: rounduprange, unwrap!, LMP
 using ..LMP
 
+
+mutable struct ProcessInfo
+    inputidx::Int
+    process::Union{Base.Process,Nothing}
+    starttime::Float64
+
+    ProcessInfo() = new(0,nothing,0.0)
+end
+start!(p::ProcessInfo) = (p.starttime = time())
+elapsed(p::ProcessInfo) = time() - p.starttime
+
+
 """
     run(file, computejob::ComputeJob, submitjob=true)
 
@@ -81,7 +93,6 @@ function writeinp(s::BasicInput, computejob::ComputeJob)
         homogeneous = false
         ionosphere = "range exponential $runname"
     end
-
     
     endline = "\n"
     open(joinpath(lwpcpath, "cases", runname*".inp"), "w") do f
@@ -168,50 +179,138 @@ function runjob(computejob::Local)
 
     deletefiles(lwpcath, runname)
 
-    input = joinpath("cases", runname)
+    inputname = joinpath("cases", runname)
 
-    # cd to lwpcpath, run lwpc, and return here
-    origdir = pwd()
-    cd(lwpcpath)
-    output = read(`$exename $input`, String)
-    cd(origdir)
+    cmd = Cmd(`$exename $inputname`; dir=lwpcpath)
+    process = run(cmd, String)
 
-    return output
+    return process
 end
 
 function buildrunjob(s::BatchInput{BasicInput}, computejob::LocalParallel)
-    nprocs() == computejob.numnodes+1 || @warn "computejob.numnodes does not match nprocs(). Using $(nprocs()) processes."
+    exefile, exeext = splitext(computejob.exefile)
+    lwpcpath, exefilename = splitdir(exefile)
+    
+    completed = falses(length(s.inputs))
+    results = Vector{BasicOutput}(undef, length(s.inputs))
+    processes = Tuple(ProcessInfo() for i in 1:computejob.numnodes)
+    for (inputidx, input) in enumerate(s.inputs)
+        submitted = false
+        while !submitted
+            for (pid, proc) in enumerate(processes)
+                newlwpcpath = lwpcpath*"_"*string(pid)
+                newexefile = joinpath(newlwpcpath, exefilename*string(pid)*exeext)
+                ii = proc.inputidx
 
-    _buildrunjob = function (s)
-        pid = myid()
+                if !process_running(proc.process) || isnothing(proc.process)
+                    # Process is available, can assign immediately
+                    cj = Local(input.name, newlwpcpath, newexefile)
 
-        exefile, exeext = splitext(computejob.exefile)
-        lwpcpath, exefilename = splitdir(exefile)
+                    build(input, cj)
+                    proc.inputidx = inputidx
+                    start!(proc)
+                    proc.process = runjob(cj)
+                    submitted = true
+                    break
+                elseif process_exited(proc.process)
+                    # Process is completed
+                    dist, amp, phase = readlog(joinpath(newlwpcpath, "cases", input.name*".log"))
+                    dist *= 1e3  # convert to m
 
-        newlwpcpath = lwpcpath*"_"*string(pid)
-        newexefile = joinpath(newlwpcpath, exefilename*string(pid)*exeext)
+                    output = BasicOutput()
+                    output.name = s.inputs[ii].name
+                    output.description = s.inputs[ii].description
+                    output.datetime = s.inputs[ii].datetime
 
-        cj = Local(s.name, newlwpcpath, newexefile)
+                    # Strip last index of each field because they're 0 (and then inf)
+                    output.output_ranges = round.(dist, digits=-3)  # fix floating point, rounded to nearest km
+                    output.amplitude = amp
+                    output.phase = phase
 
-        build(s, cj)
-        runjob(cj)
+                    results[ii] = output
+                    completed[ii] = true
 
-        tstart = time()  # seconds
-        goodlog = false
-        while !goodlog && (time() - tstart < 60)
-            try
-                o = readlog(joinpath(newlwpcpath, "cases", s.name*".log"))
-                goodlog = true
-            catch
-                continue
+                    # Start next process
+                    cj = Local(input.name, newlwpcpath, newexefile)
+                    build(input, cj)
+                    start!(proc)
+                    proc.process = runjob(cj)
+                    submitted = true
+                    break
+                elseif elapsed(proc.process) > 180
+                    # Process timed out
+                    @warn "LWPC timed out"
+                    
+                    kill(proc.process)
+
+                    output = BasicOutput()
+                    output.name = s.inputs[ii].name
+                    output.description = s.inputs[ii].description
+                    output.datetime = s.inputs[ii].datetime
+
+                    output.output_ranges = [NaN]
+                    output.amplitude = [NaN]
+                    output.phase = [NaN]
+
+                    results[ii] = output
+                    completed[ii] = true
+
+                    # Start the next process
+                    cj = Local(input.name, newlwpcpath, newexefile)
+                    build(input, cj)
+                    start!(proc)
+                    proc.process = runjob(cj)
+                    submitted = true
+                    break
+                end
             end
+            sleep(0.1)
         end
-
-        sleep(0.2)
-        return nothing
     end
 
-    pmap(_buildrunjob, s.inputs)
+    # Remaining results
+    while any(process_running(p.process) for p in processes)
+        for (pid, proc) in enumerate(processes)
+            ii = proc.inputidx
+            if process_exited(proc.process) && !completed[ii]
+                dist, amp, phase = readlog(joinpath(newlwpcpath, "cases", input.name*".log"))
+                dist *= 1e3  # convert to m
+
+                output = BasicOutput()
+                output.name = s.inputs[ii].name
+                output.description = s.inputs[ii].description
+                output.datetime = s.inputs[ii].datetime
+
+                # Strip last index of each field because they're 0 (and then inf)
+                output.output_ranges = round.(dist, digits=-3)  # fix floating point, rounded to nearest km
+                output.amplitude = amp
+                output.phase = phase
+
+                results[ii] = output
+                completed[ii] = true
+            elseif elapsed(proc.process) > 180
+                # Process timed out
+                @warn "LWPC timed out"
+                    
+                kill(proc.process)
+
+                output = BasicOutput()
+                output.name = s.inputs[ii].name
+                output.description = s.inputs[ii].description
+                output.datetime = s.inputs[ii].datetime
+
+                output.output_ranges = [NaN]
+                output.amplitude = [NaN]
+                output.phase = [NaN]
+
+                results[ii] = output
+                completed[ii] = true
+            end
+        end
+        sleep(0.1)
+    end
+
+    return results
 end
 
 function readlog(file)
