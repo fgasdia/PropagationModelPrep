@@ -7,8 +7,6 @@ using ..PropagationModelPrep
 using ..PropagationModelPrep: rounduprange, unwrap!, LMP
 using ..LMP
 
-const TIME_LIMIT = 180
-
 mutable struct ProcessInfo
     inputidx::Int
     process::Union{Base.Process,Nothing}
@@ -224,7 +222,7 @@ function build_runjob(s::BasicInput, computejob; submitjob=true)
         t0 = time()
         process = runjob(computejob)
         completed = false
-        while !completed && (time() - t0 < TIME_LIMIT)
+        while !completed && (time() - t0 < computejob.walltime)
             if process_exited(process)
                 dist, amp, phase = readlog(joinpath(newlwpcpath, "cases", input.name*".log"))
                 dist *= 1e3  # convert to m
@@ -322,7 +320,7 @@ function build_runjob(s::BatchInput{BasicInput}, computejob::LocalParallel; subm
                     proc.process = runjob(cj)
                     submitted = true
                     break
-                elseif elapsed(proc.process) > TIME_LIMIT
+                elseif elapsed(proc.process) > computejob.walltime
                     # Process timed out
                     @warn "LWPC time limit exceeded"
                     
@@ -373,7 +371,7 @@ function build_runjob(s::BatchInput{BasicInput}, computejob::LocalParallel; subm
 
                 batch.outputs[ii] = output
                 completed[ii] = true
-            elseif elapsed(proc.process) > TIME_LIMIT
+            elseif elapsed(proc.process) > computejob.walltime
                 # Process timed out
                 @warn "LWPC time limit exceeded"
                     
