@@ -88,12 +88,12 @@ mutable struct LocalParallel <: ParallelComputeJob
 
     LocalParallel() = new()
 end
-function LocalParallel(runname, rundir, exefile, numnodes, walltime)
+function LocalParallel(runname, rundir, exefile, numnodes)
     cj = LocalParallel()
     cj.runname = runname
     cj.rundir = rundir
     cj.exefile = exefile
     cj.numnodes = numnodes
-    cj.walltime = walltime
+
     return cj
 end

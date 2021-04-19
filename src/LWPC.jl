@@ -7,6 +7,7 @@ using ..PropagationModelPrep
 using ..PropagationModelPrep: rounduprange, unwrap!, LMP
 using ..LMP
 
+const TIME_LIMIT = 180
 
 mutable struct ProcessInfo
     inputidx::Int
@@ -22,10 +23,9 @@ elapsed(p::ProcessInfo) = time() - p.starttime
 """
     run(file, computejob::ComputeJob, submitjob=true)
 
-Generate the input files and attempt to run the emp2d code for the scenario
-described by `file` as `computejob`.
-
-Optionally provide an inputs::Inputs() struct. Otherwise default values are used.
+Generate the input files and run the LWPC code for the scenario described by `file` with the
+compute parameters defined by `computejob`. If `file` does not contain a `BatchInput` and
+`submitjob` is `false`, then the input files are created but LWPC is not run.
 """
 function run(file, computejob::ComputeJob; submitjob=true)
     isfile(file) || error("$file is not a valid file name")
@@ -41,16 +41,16 @@ function run(file, computejob::ComputeJob; submitjob=true)
         mkpath(newpath)
     end
 
-    if s isa BatchInput
-        buildrunjob(s, computejob)
-    else
-        build(s, computejob)
-        submitjob && runjob(computejob)
-    end
+    output = build_runjob(s, computejob; submitjob=submitjob)
 
-    return nothing
+    return output
 end
 
+"""
+    build(s, computejob)
+
+Write LWPC `.inp` and `.ndx` files.
+"""
 function build(s::BasicInput, computejob::ComputeJob)
     if computejob.runname != s.name
         @info "Updating computejob runname to $(s.name)"
@@ -73,6 +73,9 @@ in LWPC's xmtr.lis, LWPC will break.
 """
 randtransmittername() = randstring('a':'z', 10)
 
+"""
+    writeinp(s, computejob)
+"""
 function writeinp(s::BasicInput, computejob::ComputeJob)
     exepath = computejob.exefile
     lwpcpath, exename = splitdir(exepath)
@@ -138,6 +141,9 @@ function writeinp(s::BasicInput, computejob::ComputeJob)
     return nothing
 end
 
+"""
+    writendx(s, computejob)
+"""
 function writendx(s::BasicInput, computejob::ComputeJob)
     exepath = computejob.exefile
     lwpcpath, exename = splitdir(exepath)
@@ -157,8 +163,14 @@ function writendx(s::BasicInput, computejob::ComputeJob)
     return nothing
 end
 
+"""
+    deletefiles(lwpcpath, runname)
+    deletefiles(computejob)
+
+Delete any files that might already exist in LWPC "Output" folder and the `.log` file for
+`runname`.
+"""
 function deletefiles(lwpcpath, runname)
-    # Delete any files that might already exist in LWPC Output folder for same runname
     output_files = readdir(joinpath(lwpcpath, "Output"))
     for file in output_files
         if splitext(basename(file))[1] == runname
@@ -170,8 +182,13 @@ function deletefiles(lwpcpath, runname)
     logfilepath = joinpath(lwpcpath, "cases", runname*".log")
     isfile(logfilepath) && rm(logfilepath)
 end
-deletefiles(cj::Local) = deletefiles(splitdir(cj.exefile)[1], cj.runname)
+deletefiles(computejob) = deletefiles(splitdir(computejob.exefile)[1], computejob.runname)
 
+"""
+    runjob(computejob)
+
+Run the `computejob` and return the associated `Process`.
+"""
 function runjob(computejob::Local)
     exepath = computejob.exefile
     lwpcpath, exename = splitdir(exepath)
@@ -187,22 +204,90 @@ function runjob(computejob::Local)
     return process
 end
 
-function buildrunjob(s::BatchInput{BasicInput}, computejob::LocalParallel)
+"""
+    build_runjob(s::BasicInput, computejob; submitjob=true)
+
+Construct the input files for `s`, and if `submitjob` is true, run LWPC and return results
+as a `BasicOutput`.
+"""
+function build_runjob(s::BasicInput, computejob; submitjob=true)
+    # No matter if `computejob` is `Local` or `LocalParallel`, `BasicInput` will be run with
+    # a single process
+    build(s, computejob)
+
+    if submitjob
+        output = BasicOutput()
+        output.name = s.name
+        output.description = s.description
+        output.datetime = s.datetime
+
+        t0 = time()
+        process = runjob(computejob)
+        completed = false
+        while !completed && (time() - t0 < TIME_LIMIT)
+            if process_exited(process)
+                dist, amp, phase = readlog(joinpath(newlwpcpath, "cases", input.name*".log"))
+                dist *= 1e3  # convert to m
+
+                # Strip last index of each field because they're 0 (and then inf)
+                output.output_ranges = round.(dist, digits=-3)  # fix floating point, rounded to nearest km
+                output.amplitude = amp
+                output.phase = phase
+
+                completed = true
+            else
+                sleep(0.1)
+            end
+        end
+        if !completed
+            @warn "LWPC time limit exceeded"
+
+            output.output_ranges = [NaN]
+            output.amplitude = [NaN]
+            output.phase = [NaN]
+        end
+    else
+        output = nothing
+    end
+
+    return output
+end
+
+"""
+    build_runjob(s::BatchInput, computejob; submitjob=true)
+
+For each of `s.inputs`, construct the input files and run LWPC, returning results as a
+`BatchOutput{BasicOutput}`.
+
+If `computejob` is a `LocalParallel`, it is assumed that there exist directories named
+"C:\\LWPCv21_0" to "C:\\LWPCv21_N" where "N" is `computejob.numnodes`. In each directory
+it is assumed there is an associated executable "lwpm0.exe" to "lwpmN.exe". The `computejob`
+should have `exefile = C:\\LWPCv21\\lwpm.exe`.
+
+!!! note
+    The `submitjob` argument is ignored if `computejob` is `LocalParallel`.
+"""
+function build_runjob(s::BatchInput{BasicInput}, computejob::LocalParallel; submitjob=true)
     exefile, exeext = splitext(computejob.exefile)
     lwpcpath, exefilename = splitdir(exefile)
+
+    batch = BatchOutput{BasicOutput}()
+    batch.name = s.name
+    batch.description = s.description
+    batch.datetime = s.datetime
+    batch.outputs = Vector{BasicOutput}(undef, length(s.inputs))
     
     completed = falses(length(s.inputs))
-    results = Vector{BasicOutput}(undef, length(s.inputs))
     processes = Tuple(ProcessInfo() for i in 1:computejob.numnodes)
     for (inputidx, input) in enumerate(s.inputs)
         submitted = false
         while !submitted
             for (pid, proc) in enumerate(processes)
-                newlwpcpath = lwpcpath*"_"*string(pid)
-                newexefile = joinpath(newlwpcpath, exefilename*string(pid)*exeext)
+                newlwpcpath = lwpcpath*"_"*string(pid-1)
+                newexefile = joinpath(newlwpcpath, exefilename*string(pid-1)*exeext)
                 ii = proc.inputidx
 
-                if !process_running(proc.process) || isnothing(proc.process)
+                if isnothing(proc.process) || !process_running(proc.process)
                     # Process is available, can assign immediately
                     cj = Local(input.name, newlwpcpath, newexefile)
 
@@ -227,7 +312,7 @@ function buildrunjob(s::BatchInput{BasicInput}, computejob::LocalParallel)
                     output.amplitude = amp
                     output.phase = phase
 
-                    results[ii] = output
+                    batch.outputs[ii] = output
                     completed[ii] = true
 
                     # Start next process
@@ -237,9 +322,9 @@ function buildrunjob(s::BatchInput{BasicInput}, computejob::LocalParallel)
                     proc.process = runjob(cj)
                     submitted = true
                     break
-                elseif elapsed(proc.process) > 180
+                elseif elapsed(proc.process) > TIME_LIMIT
                     # Process timed out
-                    @warn "LWPC timed out"
+                    @warn "LWPC time limit exceeded"
                     
                     kill(proc.process)
 
@@ -252,7 +337,7 @@ function buildrunjob(s::BatchInput{BasicInput}, computejob::LocalParallel)
                     output.amplitude = [NaN]
                     output.phase = [NaN]
 
-                    results[ii] = output
+                    batch.outputs[ii] = output
                     completed[ii] = true
 
                     # Start the next process
@@ -269,7 +354,7 @@ function buildrunjob(s::BatchInput{BasicInput}, computejob::LocalParallel)
     end
 
     # Remaining results
-    while any(process_running(p.process) for p in processes)
+    while any(!, completed)
         for (pid, proc) in enumerate(processes)
             ii = proc.inputidx
             if process_exited(proc.process) && !completed[ii]
@@ -286,11 +371,11 @@ function buildrunjob(s::BatchInput{BasicInput}, computejob::LocalParallel)
                 output.amplitude = amp
                 output.phase = phase
 
-                results[ii] = output
+                batch.outputs[ii] = output
                 completed[ii] = true
-            elseif elapsed(proc.process) > 180
+            elseif elapsed(proc.process) > TIME_LIMIT
                 # Process timed out
-                @warn "LWPC timed out"
+                @warn "LWPC time limit exceeded"
                     
                 kill(proc.process)
 
@@ -303,14 +388,32 @@ function buildrunjob(s::BatchInput{BasicInput}, computejob::LocalParallel)
                 output.amplitude = [NaN]
                 output.phase = [NaN]
 
-                results[ii] = output
+                batch.ouputs[ii] = output
                 completed[ii] = true
             end
         end
         sleep(0.1)
     end
 
-    return results
+    return batch
+end
+
+function build_runjob(s::BatchInput{BasicInput}, computejob::Local; submitjob=true)
+    exefile, exeext = splitext(computejob.exefile)
+    lwpcpath, exefilename = splitdir(exefile)
+
+    batch = BatchOutput{BasicOutput}()
+    batch.name = s.name
+    batch.description = s.description
+    batch.datetime = s.datetime
+    batch.outputs = Vector{BasicOutput}(undef, length(s.inputs))
+    
+    for i in eachindex(s.inputs)
+        o = build_runjob(s.inputs[i], computejob; submitjob=submitjob)
+        batch.outputs[i] = o
+    end
+
+    return batch
 end
 
 function readlog(file)
@@ -354,96 +457,6 @@ function readlog(file)
     end
 
     return dist, amp, phase
-end
-
-function process(jsonfile, computejob::ComputeJob)
-    s = LMP.parse(jsonfile)
-
-    return process(s, computejob)
-end
-
-function process(s::BasicInput, computejob::ComputeJob)
-    exepath = computejob.exefile
-    lwpcpath, exename = splitdir(exepath)
-    runname = computejob.runname
-    rundir = computejob.rundir
-
-    name = s.name
-    description = s.description
-    datetime = s.datetime
-
-    dist, amp, phase = readlog(joinpath(lwpcpath, "cases", runname*".log"))
-    dist *= 1e3  # convert to m
-
-    output = BasicOutput()
-    output.name = name
-    output.description = description
-    output.datetime = datetime
-
-    # Strip last index of each field because they're 0 (and then inf)
-    output.output_ranges = round.(dist, digits=-3)  # fix floating point, rounded to nearest km
-    output.amplitude = amp
-    output.phase = phase
-
-    # Save output
-    json_str = JSON3.write(output)
-
-    open(joinpath(rundir,name*"_lwpc.json"), "w") do f
-        write(f, json_str)
-    end
-
-    return output
-end
-
-function process(jsonfile, computejob::LocalParallel)
-    s = LMP.parse(jsonfile)
-
-    return process(s, computejob)
-end
-
-function process(s::BatchInput{BasicInput}, computejob::LocalParallel)
-    lwpcfile, ext = splitext(computejob.exefile)
-    lwpcpath, lwpcfilename = splitdir(lwpcfile)
-
-    batch = BatchOutput{BasicOutput}()
-    batch.name = s.name
-    batch.description = s.description
-    batch.datetime = Dates.now()
-
-    for n in 1:nprocs()
-        newlwpcpath = lwpcpath*"_"*string(n)
-
-        for i in eachindex(s.inputs)
-            runname = s.inputs[i].name
-            logfile = joinpath(newlwpcpath, "cases", runname*".json")
-
-            if isfile(logfile)
-                dist, amp, phase = readlog(logfile)
-                dist *= 1e3  # convert to m
-
-                output = BasicOutput()
-                output.name = name
-                output.description = description
-                output.datetime = datetime
-
-                # Strip last index of each field because they're 0 (and then inf)
-                output.output_ranges = round.(dist, digits=-3)  # fix floating point, rounded to nearest km
-                output.amplitude = amp
-                output.phase = phase
-
-                push!(batch.outputs, output)
-            end
-        end
-    end
-
-    # Save output
-    json_str = JSON3.write(batch)
-
-    open(joinpath(computejob.rundir, computejob.name*"_lwpc.json"), "w") do f
-        write(f, json_str)
-    end
-
-    return batch
 end
 
 end  # module
