@@ -102,7 +102,6 @@ function writeinp(input::BasicInput, computejob)
     freq = input.frequency/1e3  # in kHz
     max_range = ceil(Int, maximum(input.output_ranges)/1e3)  # convert to km
     diffrange = diff(input.output_ranges)
-
     drange = trunc(Int, diffrange[1]/1e3)  # in km
     length(unique(round.(diffrange))) == 1 || @info "Using drange = $drange km"
 
@@ -125,7 +124,6 @@ function writeinp(input::BasicInput, computejob)
         write(f, "case-id     $runname", endline)
         write(f, "tx          $runname", endline)
         write(f, "tx-data     $(randtransmittername())  $freq  0.0  0.0  100.0  0.0  0.000  0.0", endline)
-
         write(f, "receivers   0.0000  0.0000", endline)
         write(f, "range-max   $max_range", endline)
         write(f, "ionosphere  $ionosphere", endline)

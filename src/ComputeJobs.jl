@@ -74,13 +74,11 @@ mutable struct Local <: ComputeJob
     Local() = new()
 end
 function Local(runname, rundir, exefile, walltime)
-
     cj = Local()
     cj.runname = runname
     cj.rundir = rundir
     cj.exefile = exefile
     cj.walltime = walltime
-
     return cj
 end
 
@@ -90,7 +88,6 @@ mutable struct LocalParallel <: ParallelComputeJob
     exefile::String
     numnodes::Int
     walltime::Int  # seconds, time limit per run
-
 
     LocalParallel() = new()
 end
