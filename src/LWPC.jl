@@ -27,6 +27,11 @@ compute parameters defined by `computejob`. If `file` does not contain a `BatchI
 `submitjob` is `false`, then the input files are created but LWPC is not run.
 
 The output is written to a `.json` file if `savefile` is `true`.
+
+If `computejob` is a `LocalParallel`, it is assumed that there exist directories named
+"C:\\LWPCv21_0" to "C:\\LWPCv21_N" where "N" is `computejob.numnodes`. In each directory
+it is assumed there is an associated executable "lwpm0.exe" to "lwpmN.exe". The `computejob`
+should have `exefile = C:\\LWPCv21\\lwpm.exe`.
 """
 function run(file::String, computejob; submitjob=true, savefile=true)
     isfile(file) || error("$file is not a valid file name")
