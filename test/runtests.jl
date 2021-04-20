@@ -1,4 +1,4 @@
-using Test, Dates, Distributed
+using Test, Dates
 using JSON3
 using LongwaveModePropagator
 const LMP = LongwaveModePropagator
@@ -106,6 +106,56 @@ function generate_batchbasic()
     return nothing
 end
 
+function largebatchinput()
+    N = 12
+
+    # Waveguide definition
+    segment_ranges = [0.0]
+    b_mags = [50e-6]
+    b_dips = [π/2]
+    b_azs = [0.0]
+    ground_sigmas = [0.001]
+    ground_epsrs = [10]
+
+    hprimes = [72.0]
+    betas = [0.30]
+
+    # Transmitter
+    frequency = 24e3
+
+    # Outputs
+    output_ranges = collect(0:20e3:2000e3)
+
+    binput = BatchInput{BasicInput}()
+    binput.name = "largebatchinput"
+    binput.description = "Test BatchInput with BasicInput"
+    binput.datetime = Dates.now()
+
+    inputs = Vector{BasicInput}(undef, N)
+    for i in eachindex(inputs)
+        input = BasicInput()
+
+        input.name = "$i"
+        input.description = "BasicInput $i"
+        input.datetime = binput.datetime
+        input.segment_ranges = segment_ranges
+        input.hprimes = hprimes
+        input.betas = betas
+        input.b_mags = b_mags
+        input.b_dips = b_dips
+        input.b_azs = b_azs
+        input.ground_sigmas = ground_sigmas
+        input.ground_epsrs = ground_epsrs
+        input.frequency = frequency
+        input.output_ranges = output_ranges
+
+        inputs[i] = input
+    end
+    binput.inputs = inputs
+
+    return binput
+end
+
 function test_unwrap()
     # Generate parametric spiral
     t = range(0, 6π, length=201)
@@ -149,9 +199,121 @@ end
 
 function test_lwpclocal()
     scenarioname = "homogeneous1"
-    computejob = Local(scenarioname, ".", "C:\\LWPCv21\\lwpm.exe")
-    LWPC.run(scenarioname*".json", computejob)
-    LWPC.process(scenarioname*".json", computejob)
+    computejob = Local(scenarioname, ".", "C:\\LWPCv21\\lwpm.exe", 90)
+
+    exepath = computejob.exefile
+    lwpcpath, exename = splitdir(exepath)
+
+    logfile = joinpath(lwpcpath, "cases", scenarioname*".log")
+    inpfile = joinpath(lwpcpath, "cases", scenarioname*".inp")
+    ndxfile = joinpath(lwpcpath, "cases", scenarioname*".ndx")
+    lwffile = joinpath(lwpcpath, "Output", scenarioname*".lwf")
+    mdsfile = joinpath(lwpcpath, "Output", scenarioname*".mds")
+
+    output = LWPC.run(scenarioname*".json", computejob)
+    @test output isa BasicOutput
+
+    # Test `deletefiles`
+    @test isfile(logfile)
+    @test isfile(lwffile)
+    @test isfile(mdsfile)
+    @test isfile(inpfile)
+    @test isfile(ndxfile)
+    LWPC.deletefiles(computejob)
+    @test !isfile(logfile)
+    @test !isfile(lwffile)
+    @test !isfile(mdsfile)
+    @test isfile(inpfile)  # shouldn't be deleted
+    @test isfile(ndxfile)  # shouldn't be deleted
+
+    # Test `build` (and indirectly, `writendx` and `writeinp`)
+    rm(logfile; force=true)
+    s = LMP.parse(scenarioname*".json")
+    LWPC.build(s, computejob)
+    @test isfile(ndxfile)
+    @test isfile(inpfile)
+    rm(inpfile; force=true)
+    rm(ndxfile; force=true)
+
+    # Test `runjob`
+    LWPC.deletefiles(computejob)
+    LWPC.build(s, computejob)
+    process = LWPC.runjob(computejob)
+    sleep(5)
+    d, a, p = LWPC.readlog(logfile)
+    @test length(d) == length(a) == length(p) == length(s.output_ranges)
+
+    # Test `build_runjob`
+    rm(inpfile; force=true)
+    rm(ndxfile; force=true)
+    output = LWPC.build_runjob(s, computejob; submitjob=true)
+    @test isfile(logfile)
+    d, a, p = LWPC.readlog(logfile)
+    @test output.output_ranges/1000 == d
+    @test output.amplitude == a
+    @test output.phase == deg2rad.(p)
+
+    rm(inpfile; force=true)
+    rm(ndxfile; force=true)
+    LWPC.deletefiles(computejob)
+    output = LWPC.build_runjob(s, computejob; submitjob=false)
+    @test isnothing(output)
+    @test isfile(inpfile)
+    @test isfile(ndxfile)
+end
+
+function test_lwpclocal_batch()
+    scenarioname = "batchbasic"
+    computejob = Local(scenarioname, ".", "C:\\LWPCv21\\lwpm.exe", 90)
+
+    exepath = computejob.exefile
+    lwpcpath, exename = splitdir(exepath)
+
+    inpfile = joinpath(lwpcpath, "cases", scenarioname*".inp")
+    ndxfile = joinpath(lwpcpath, "cases", scenarioname*".ndx")
+
+    s = LMP.parse(scenarioname*".json")
+
+    # Test `build_runjob`
+    rm(inpfile; force=true)
+    rm(ndxfile; force=true)
+    o = LWPC.build_runjob(s, computejob; submitjob=true)
+    @test o isa BatchOutput
+    @test length(o.outputs) == 2
+
+    for i in eachindex(s.inputs)
+        d, a, p = o.outputs[i].output_ranges, o.outputs[i].amplitude, o.outputs[i].phase
+        @test length(d) == length(a) == length(p) == length(s.inputs[i].output_ranges)
+    end
+end
+
+function test_lwpclocalparallel_batch(numnodes)
+    s = largebatchinput()
+    scenarioname = s.name
+    computejob = LocalParallel(scenarioname, ".", "C:\\LWPCv21\\lwpm.exe", numnodes, 90)
+
+    # Test `build_runjob`
+    o = LWPC.build_runjob(s, computejob; submitjob=true)
+    @test o isa BatchOutput
+    @test length(o.outputs) == 12
+
+    for i in eachindex(s.inputs)
+        d, a, p = o.outputs[i].output_ranges, o.outputs[i].amplitude, o.outputs[i].phase
+        @test length(d) == length(a) == length(p) == length(s.inputs[i].output_ranges)
+    end
+
+    # Test `run` against `build_runjob`
+    o2 = LWPC.run(s, computejob)
+
+    for field in (:name, :description, :datetime)
+        @test getfield(o, field) == getfield(o2, field)
+    end
+
+    for i in eachindex(o.outputs)
+        for field in fieldnames(BasicOutput)
+            @test getfield(o.outputs[i], field) == getfield(o2.outputs[i], field)
+        end
+    end
 end
 
 @testset "PropagationModelPrep" begin
@@ -163,7 +325,6 @@ end
         test_unwrap()
     end
 
-    # TODO: Toggle EMP2D and LWPC tests
     @testset "EMP2D" begin
         test_emp2dinputs()
 
@@ -177,8 +338,8 @@ end
     end
 
     @testset "LWPC" begin
-        # @test test_lwpclocal()
-        # TODO
+        test_lwpclocal()
+        test_lwpclocal_batch()
     end
 
     # Cleanup
@@ -187,4 +348,5 @@ end
     isfile("batchbasic.json") && rm("batchbasic.json")
     isfile("homogeneous1.json") && rm("homogeneous1.json")
     isfile("homogeneous1_lwpc.json") && rm("homogeneous1_lwpc.json")
+    isfile("largebatchinput_lwpc.json") && rm("largebatchinput_lwpc.json")
 end

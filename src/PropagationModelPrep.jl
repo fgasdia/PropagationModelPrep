@@ -1,6 +1,5 @@
 module PropagationModelPrep
 
-using Distributed
 using Reexport
 using Interpolations
 using ProgressMeter
@@ -10,7 +9,6 @@ const LMP = LongwaveModePropagator
 
 include("utils.jl")
 include("ComputeJobs.jl")
-include("MSISatmosphere.jl")
 
 export ComputeJob, Summit, Local, LocalParallel
 export writeshfile, runjob
