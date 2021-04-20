@@ -1,7 +1,7 @@
 module LWPC
 
 using Printf, Random
-using JSON3, CSV, DataFrames
+using JSON3, CSV
 
 using ..PropagationModelPrep
 using ..PropagationModelPrep: LMP
