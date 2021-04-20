@@ -348,4 +348,5 @@ end
     isfile("batchbasic.json") && rm("batchbasic.json")
     isfile("homogeneous1.json") && rm("homogeneous1.json")
     isfile("homogeneous1_lwpc.json") && rm("homogeneous1_lwpc.json")
+    isfile("largebatchinput_lwpc.json") && rm("largebatchinput_lwpc.json")
 end
