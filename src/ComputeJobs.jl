@@ -69,14 +69,16 @@ mutable struct Local <: ComputeJob
     runname::String
     rundir::String
     exefile::String
+    walltime::Int
 
     Local() = new()
 end
-function Local(runname, rundir, exefile)
+function Local(runname, rundir, exefile, walltime)
     cj = Local()
     cj.runname = runname
     cj.rundir = rundir
     cj.exefile = exefile
+    cj.walltime = walltime
     return cj
 end
 
