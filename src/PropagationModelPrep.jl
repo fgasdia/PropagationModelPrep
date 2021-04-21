@@ -2,7 +2,6 @@ module PropagationModelPrep
 
 using Reexport
 using Interpolations
-using ProgressMeter
 
 using LongwaveModePropagator
 const LMP = LongwaveModePropagator

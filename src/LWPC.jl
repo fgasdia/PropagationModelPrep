@@ -2,6 +2,7 @@ module LWPC
 
 using Printf, Random
 using JSON3, CSV
+using ProgressLogging
 
 using ..PropagationModelPrep
 using ..PropagationModelPrep: LMP
@@ -304,6 +305,8 @@ function build_runjob(inputs::BatchInput{BasicInput}, computejob::LocalParallel;
     
     completed = falses(numinputs)
     processes = Tuple(ProcessInfo() for i in 1:computejob.numnodes)
+
+    @withprogress name="Batch LWPC" begin
     for (inputidx, input) in enumerate(inputs.inputs)
         submitted = false
         while !submitted
@@ -345,6 +348,7 @@ function build_runjob(inputs::BatchInput{BasicInput}, computejob::LocalParallel;
 
                     batch.outputs[ii] = output
                     completed[ii] = true
+                    @logprogress count(completed)/length(completed)
                     @debug "Input $ii is completed"
 
                     # Start next process
@@ -374,6 +378,7 @@ function build_runjob(inputs::BatchInput{BasicInput}, computejob::LocalParallel;
 
                     batch.outputs[ii] = output
                     completed[ii] = true
+                    @logprogress count(completed)/length(completed)
                     @debug "Input $ii is completed"
 
                     # Start the next process
@@ -418,6 +423,7 @@ function build_runjob(inputs::BatchInput{BasicInput}, computejob::LocalParallel;
 
                 batch.outputs[ii] = output
                 completed[ii] = true
+                @logprogress count(completed)/length(completed)
             elseif elapsed(proc) > computejob.walltime
                 # Process timed out
                 @warn "LWPC time limit exceeded"
@@ -435,10 +441,12 @@ function build_runjob(inputs::BatchInput{BasicInput}, computejob::LocalParallel;
 
                 batch.outputs[ii] = output
                 completed[ii] = true
+                @logprogress count(completed)/length(completed)
             end
         end
         sleep(0.1)
     end
+    end  # withprogress 
 
     @debug "Final: All $(count(completed)) inputs completed"
 
