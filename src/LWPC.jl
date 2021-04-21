@@ -143,7 +143,7 @@ function writeinp(input::BasicInput, computejob)
             # be Gauss. Also, rounded up because exactly 0 is not supported
 
             r = round(Int, input.segment_ranges[i]/1e3)  # dist in km
-            b_az = rad2deg(input.b_azs[i])  # deg east of north
+            b_az = rad2deg(mod2pi(input.b_azs[i]))  # deg east of north
             b_dip = rad2deg(input.b_dips[i])  # deg from horizontal
             b_mag = round(input.b_mags[i]*1e4, digits=6, RoundUp)
             gsigma = round(input.ground_sigmas[i], digits=6)
