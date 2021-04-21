@@ -268,7 +268,7 @@ function build_runjob(input::BasicInput, computejob; submitjob=true)
             end
         end
         if !completed
-            @warn "LWPC time limit exceeded"
+            @warn "LWPC time limit exceeded. $process"
 
             output.output_ranges = [NaN]
             output.amplitude = [NaN]
@@ -366,7 +366,7 @@ function build_runjob(inputs::BatchInput{BasicInput}, computejob::LocalParallel;
                     break
                 elseif elapsed(proc) > computejob.walltime
                     # Process timed out
-                    @warn "LWPC time limit exceeded"
+                    @warn "LWPC time limit exceeded. $(proc.process)"
                     @debug "Process $pid has exceeded walltime"
                     
                     kill(proc.process)
@@ -430,7 +430,7 @@ function build_runjob(inputs::BatchInput{BasicInput}, computejob::LocalParallel;
                 @logprogress count(completed)/length(completed)
             elseif elapsed(proc) > computejob.walltime
                 # Process timed out
-                @warn "LWPC time limit exceeded"
+                @warn "LWPC time limit exceeded. $(proc.process)"
                     
                 kill(proc.process)
 
