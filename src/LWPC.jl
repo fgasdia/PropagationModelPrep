@@ -108,6 +108,7 @@ function writeinp(input::BasicInput, computejob)
     diffrange = diff(input.output_ranges)
     drange = trunc(Int, diffrange[1]/1e3)  # in km
     length(unique(round.(diffrange))) == 1 || @info "Using drange = $drange km"
+    length(0:drange:max_range) > 1000 && throw(ArgumentError("output_ranges is too long"))
 
     if length(input.segment_ranges) == 1
         homogeneous = true
