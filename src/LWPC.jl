@@ -96,6 +96,9 @@ randtransmittername() = randstring('a':'z', 10)
     writeinp(input, computejob)
 """
 function writeinp(input::BasicInput, computejob)
+    length(input.output_ranges) == 1 &&
+        throw(ArgumentError("`output_ranges` with length 1 is not currently supported."))
+
     exepath = computejob.exefile
     lwpcpath, exename = splitdir(exepath)
     runname = computejob.runname
