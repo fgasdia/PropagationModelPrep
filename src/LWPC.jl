@@ -253,6 +253,7 @@ function build_runjob(input::BasicInput, computejob; submitjob=true)
         completed = false
         while !completed && (time() - t0 < computejob.walltime)
             if process_exited(process)
+                sleep(0.1)
                 dist, amp, phase = readlog(joinpath(lwpcpath, "cases", input.name*".log"))
                 dist *= 1e3  # convert to m
                 phase .= deg2rad.(phase)  # convert from deg to rad
@@ -282,126 +283,128 @@ function build_runjob(input::BasicInput, computejob; submitjob=true)
 end
 
 """
-    build_runjob(inputs::BatchInput, computejob; submitjob=true)
+    build_runjob(batchinput::BatchInput, computejob; submitjob=true)
 
-For each of `inputs.inputs`, construct the input files and run LWPC, returning results as a
+For each of `batchinput.inputs`, construct the input files and run LWPC, returning results as a
 `BatchOutput{BasicOutput}`.
 
 If `computejob` is a `LocalParallel`, it is assumed that there exist directories named
 "C:\\LWPCv21_0" to "C:\\LWPCv21_N" where "N" is `computejob.numnodes`. In each directory
 it is assumed there is an associated executable "lwpm0.exe" to "lwpmN.exe". The `computejob`
-should have `exefile = C:\\LWPCv21\\lwpm.exe`.
+should have `exefile = C:\\LWPCv21\\lwpm.exe`. It is also recommended to update the contents
+of the file "C:\\LWPCv21_N\\lwpcDAT.loc" in each of "N" to "C:\\LWPCv21_N\\Data\\".
+".
 
 !!! note
     The `submitjob` argument is ignored if `computejob` is `LocalParallel`.
 """
-function build_runjob(inputs::BatchInput{BasicInput}, computejob::LocalParallel; submitjob=true)
+function build_runjob(batchinput::BatchInput{BasicInput}, computejob::LocalParallel; submitjob=true)
     exefile, exeext = splitext(computejob.exefile)
     lwpcpath, exefilename = splitdir(exefile)
 
-    numinputs = length(inputs.inputs)
+    inputs = batchinput.inputs
+    numinputs = length(inputs)
 
     batch = BatchOutput{BasicOutput}()
-    batch.name = inputs.name
-    batch.description = inputs.description
-    batch.datetime = inputs.datetime
+    batch.name = batchinput.name
+    batch.description = batchinput.description
+    batch.datetime = batchinput.datetime
     batch.outputs = Vector{BasicOutput}(undef, numinputs)
     
     completed = falses(numinputs)
     processes = Tuple(ProcessInfo() for i in 1:computejob.numnodes)
 
     @withprogress name="Batch LWPC" begin
-    for (inputidx, input) in enumerate(inputs.inputs)
-        submitted = false
-        while !submitted
-            for (pid, proc) in enumerate(processes)
-                newlwpcpath = lwpcpath*"_"*string(pid-1)
-                newexefile = joinpath(newlwpcpath, exefilename*string(pid-1)*exeext)
-                ii = proc.inputidx
+    i = 1  # i: inputidx, ii: proc.inputidx
+    while i <= numinputs
+        for (pid, proc) in enumerate(processes)
+            i > numinputs && break
 
-                if isnothing(proc.process)
-                    # Process is available, can assign immediately
-                    @debug "Process $pid is `nothing`"
+            isnothing(proc.process) || @debug "process exited $(pid-1): $(process_exited(proc.process))"
 
-                    cj = Local(input.name, newlwpcpath, newexefile, computejob.walltime)
+            newlwpcpath = lwpcpath*"_"*string(pid-1)
+            newexefile = joinpath(newlwpcpath, exefilename*string(pid-1)*exeext)
+            ii = proc.inputidx
 
-                    build(input, cj)
-                    proc.inputidx = inputidx
-                    start!(proc)
-                    proc.process = runjob(cj)
-                    submitted = true
-                    @debug "Input $inputidx submitted"
-                    break
-                elseif process_exited(proc.process)
-                    # Process is completed
-                    @debug "Process $pid has status exited"
+            if isnothing(proc.process)
+                # Process is available, can assign immediately
+                @debug "Process $(pid-1) is `nothing`"
 
-                    dist, amp, phase = readlog(joinpath(newlwpcpath, "cases", inputs.inputs[ii].name*".log"))
-                    dist *= 1e3  # convert to m
-                    phase .= deg2rad.(phase)  # convert from deg to rad
+                cj = Local(inputs[i].name, newlwpcpath, newexefile, computejob.walltime)
+                build(inputs[i], cj)
+                proc.inputidx = i
+                start!(proc)
+                proc.process = runjob(cj)
+                @debug "Input $i submitted"
+                i += 1
+            elseif process_exited(proc.process)
+                # Process is completed
+                @debug "Process $(pid-1) has status exited with proc.inputidx: $ii"
+                @debug "Trying to read: $(joinpath(newlwpcpath, "cases", inputs[ii].name*".log"))"
 
-                    output = BasicOutput()
-                    output.name = inputs.inputs[ii].name
-                    output.description = inputs.inputs[ii].description
-                    output.datetime = inputs.inputs[ii].datetime
+                sleep(0.1)
+                dist, amp, phase = readlog(joinpath(newlwpcpath, "cases", inputs[ii].name*".log"))
+                dist *= 1e3  # convert to m
+                phase .= deg2rad.(phase)  # convert from deg to rad
 
-                    # Strip last index of each field because they're 0 (and then inf)
-                    output.output_ranges = round.(dist, digits=-3)  # fix floating point, rounded to nearest km
-                    output.amplitude = amp
-                    output.phase = phase
+                output = BasicOutput()
+                output.name = inputs[ii].name
+                output.description = inputs[ii].description
+                output.datetime = inputs[ii].datetime
 
-                    batch.outputs[ii] = output
-                    completed[ii] = true
-                    @logprogress count(completed)/length(completed)
-                    @debug "Input $ii is completed"
+                # Strip last index of each field because they're 0 (and then inf)
+                output.output_ranges = round.(dist, digits=-3)  # fix floating point, rounded to nearest km
+                output.amplitude = amp
+                output.phase = phase
 
-                    # Start next process
-                    cj = Local(input.name, newlwpcpath, newexefile, computejob.walltime)
-                    build(input, cj)
-                    proc.inputidx = inputidx
-                    start!(proc)
-                    proc.process = runjob(cj)
-                    submitted = true
-                    @debug "Input $inputidx submitted"
-                    break
-                elseif elapsed(proc) > computejob.walltime
-                    # Process timed out
-                    @warn "LWPC time limit exceeded. $(proc.process)"
-                    @debug "Process $pid has exceeded walltime"
-                    
-                    kill(proc.process)
+                batch.outputs[ii] = output
+                completed[ii] = true
+                @logprogress count(completed)/numinputs
+                @debug "Input $ii is completed"
 
-                    output = BasicOutput()
-                    output.name = inputs.inputs[ii].name
-                    output.description = inputs.inputs[ii].description
-                    output.datetime = inputs.inputs[ii].datetime
+                # Start next process
+                cj = Local(inputs[i].name, newlwpcpath, newexefile, computejob.walltime)
+                build(inputs[i], cj)
+                proc.inputidx = i
+                start!(proc)
+                proc.process = runjob(cj)
+                @debug "Input $i submitted"
+                i += 1
+            elseif elapsed(proc) > computejob.walltime
+                # Process timed out
+                @warn "LWPC time limit exceeded. $(proc.process)"
+                @debug "Process $(pid-1) has exceeded walltime with proc.inputidx: $ii"
+                
+                kill(proc.process)
 
-                    output.output_ranges = [NaN]
-                    output.amplitude = [NaN]
-                    output.phase = [NaN]
+                output = BasicOutput()
+                output.name = inputs[ii].name
+                output.description = inputs[ii].description
+                output.datetime = inputs[ii].datetime
 
-                    batch.outputs[ii] = output
-                    completed[ii] = true
-                    @logprogress count(completed)/length(completed)
-                    @debug "Input $ii is completed"
+                output.output_ranges = [NaN]
+                output.amplitude = [NaN]
+                output.phase = [NaN]
 
-                    # Start the next process
-                    cj = Local(input.name, newlwpcpath, newexefile, computejob.walltime)
-                    build(input, cj)
-                    proc.inputidx = inputidx
-                    start!(proc)
-                    proc.process = runjob(cj)
-                    submitted = true
-                    @debug "Input $inputidx submitted"
-                    break
-                end
+                batch.outputs[ii] = output
+                completed[ii] = true
+                @logprogress count(completed)/numinputs
+                @debug "Input $ii is completed"
+
+                # Start the next process
+                cj = Local(inputs[i].name, newlwpcpath, newexefile, computejob.walltime)
+                build(inputs[i], cj)
+                proc.inputidx = i
+                start!(proc)
+                proc.process = runjob(cj)
+                @debug "Input $i submitted"
+                i += 1
             end
-            sleep(0.1)
         end
     end
 
-    @debug "All inputs submitted"
     @debug "$(count(completed)) inputs completed"
+    @debug "All inputs submitted"
 
     # Remaining results
     while any(!, completed)
@@ -411,14 +414,15 @@ function build_runjob(inputs::BatchInput{BasicInput}, computejob::LocalParallel;
             newlwpcpath = lwpcpath*"_"*string(pid-1)
             ii = proc.inputidx
             if !completed[ii] && process_exited(proc.process)
-                dist, amp, phase = readlog(joinpath(newlwpcpath, "cases", inputs.inputs[ii].name*".log"))
+                sleep(0.1)
+                dist, amp, phase = readlog(joinpath(newlwpcpath, "cases", inputs[ii].name*".log"))
                 dist *= 1e3  # convert to m
                 phase .= deg2rad.(phase)  # convert from deg to rad
 
                 output = BasicOutput()
-                output.name = inputs.inputs[ii].name
-                output.description = inputs.inputs[ii].description
-                output.datetime = inputs.inputs[ii].datetime
+                output.name = inputs[ii].name
+                output.description = inputs[ii].description
+                output.datetime = inputs[ii].datetime
 
                 # Strip last index of each field because they're 0 (and then inf)
                 output.output_ranges = round.(dist, digits=-3)  # fix floating point, rounded to nearest km
@@ -427,7 +431,7 @@ function build_runjob(inputs::BatchInput{BasicInput}, computejob::LocalParallel;
 
                 batch.outputs[ii] = output
                 completed[ii] = true
-                @logprogress count(completed)/length(completed)
+                @logprogress count(completed)/numinputs
             elseif elapsed(proc) > computejob.walltime
                 # Process timed out
                 @warn "LWPC time limit exceeded. $(proc.process)"
@@ -435,9 +439,9 @@ function build_runjob(inputs::BatchInput{BasicInput}, computejob::LocalParallel;
                 kill(proc.process)
 
                 output = BasicOutput()
-                output.name = inputs.inputs[ii].name
-                output.description = inputs.inputs[ii].description
-                output.datetime = inputs.inputs[ii].datetime
+                output.name = inputs[ii].name
+                output.description = inputs[ii].description
+                output.datetime = inputs[ii].datetime
 
                 output.output_ranges = [NaN]
                 output.amplitude = [NaN]
@@ -445,7 +449,7 @@ function build_runjob(inputs::BatchInput{BasicInput}, computejob::LocalParallel;
 
                 batch.outputs[ii] = output
                 completed[ii] = true
-                @logprogress count(completed)/length(completed)
+                @logprogress count(completed)/numinputs
             end
         end
         sleep(0.1)
@@ -457,19 +461,19 @@ function build_runjob(inputs::BatchInput{BasicInput}, computejob::LocalParallel;
     return batch
 end
 
-function build_runjob(inputs::BatchInput{BasicInput}, computejob::Local; submitjob=true)
+function build_runjob(batchinput::BatchInput{BasicInput}, computejob::Local; submitjob=true)
     exefile, exeext = splitext(computejob.exefile)
     lwpcpath, exefilename = splitdir(exefile)
 
     batch = BatchOutput{BasicOutput}()
-    batch.name = inputs.name
-    batch.description = inputs.description
-    batch.datetime = inputs.datetime
-    batch.outputs = Vector{BasicOutput}(undef, length(inputs.inputs))
+    batch.name = batchinput.name
+    batch.description = batchinput.description
+    batch.datetime = batchinput.datetime
+    batch.outputs = Vector{BasicOutput}(undef, length(batchinput.inputs))
     
-    for i in eachindex(inputs.inputs)
-        cj = Local(inputs.inputs[i].name, computejob.rundir, computejob.exefile, computejob.walltime)
-        o = build_runjob(inputs.inputs[i], cj; submitjob=submitjob)
+    for i in eachindex(batchinput.inputs)
+        cj = Local(batchinput.inputs[i].name, computejob.rundir, computejob.exefile, computejob.walltime)
+        o = build_runjob(batchinput.inputs[i], cj; submitjob=submitjob)
         batch.outputs[i] = o
     end
 

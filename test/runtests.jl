@@ -78,7 +78,7 @@ function generate_batchbasic()
     for i in eachindex(inputs)
         input = BasicInput()
 
-        input.name = "$i"
+        input.name = "batchbasic"
         input.description = "BasicInput $i"
         input.datetime = binput.datetime
         input.segment_ranges = segment_ranges
@@ -107,7 +107,7 @@ function generate_batchbasic()
 end
 
 function largebatchinput()
-    N = 12
+    N = 24
 
     # Waveguide definition
     segment_ranges = [0.0]
@@ -135,7 +135,7 @@ function largebatchinput()
     for i in eachindex(inputs)
         input = BasicInput()
 
-        input.name = "$i"
+        input.name = "batch"
         input.description = "BasicInput $i"
         input.datetime = binput.datetime
         input.segment_ranges = segment_ranges
@@ -295,7 +295,7 @@ function test_lwpclocalparallel_batch(numnodes)
     # Test `build_runjob`
     o = LWPC.build_runjob(s, computejob; submitjob=true)
     @test o isa BatchOutput
-    @test length(o.outputs) == 12
+    @test length(o.outputs) == 24
 
     for i in eachindex(s.inputs)
         d, a, p = o.outputs[i].output_ranges, o.outputs[i].amplitude, o.outputs[i].phase
