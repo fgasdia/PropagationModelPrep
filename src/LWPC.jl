@@ -319,9 +319,7 @@ function build_runjob(batchinput::BatchInput{BasicInput}, computejob::LocalParal
     while i <= numinputs
         for (pid, proc) in enumerate(processes)
             i > numinputs && break
-
-            isnothing(proc.process) || @debug "process exited $(pid-1): $(process_exited(proc.process))"
-
+            
             newlwpcpath = lwpcpath*"_"*string(pid-1)
             newexefile = joinpath(newlwpcpath, exefilename*string(pid-1)*exeext)
             ii = proc.inputidx
@@ -342,7 +340,7 @@ function build_runjob(batchinput::BatchInput{BasicInput}, computejob::LocalParal
                 @debug "Process $(pid-1) has status exited with proc.inputidx: $ii"
                 @debug "Trying to read: $(joinpath(newlwpcpath, "cases", inputs[ii].name*".log"))"
 
-                sleep(0.1)
+                sleep(0.01)
                 dist, amp, phase = readlog(joinpath(newlwpcpath, "cases", inputs[ii].name*".log"))
                 dist *= 1e3  # convert to m
                 phase .= deg2rad.(phase)  # convert from deg to rad
@@ -401,6 +399,7 @@ function build_runjob(batchinput::BatchInput{BasicInput}, computejob::LocalParal
                 i += 1
             end
         end
+        sleep(0.01)  # somehow without this the first process "appears" to time out
     end
 
     @debug "$(count(completed)) inputs completed"
