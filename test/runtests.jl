@@ -337,9 +337,12 @@ end
         @test_throws ErrorException filename_error()
     end
 
-    @testset "LWPC" begin
-        test_lwpclocal()
-        test_lwpclocal_batch()
+
+    if Sys.iswindows()
+        @testset "LWPC" begin
+            test_lwpclocal()
+            test_lwpclocal_batch()
+        end
     end
 
     # Cleanup
