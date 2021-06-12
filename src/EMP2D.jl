@@ -536,14 +536,14 @@ function build(s::BatchInput, computejob::ComputeJob, inputs::Inputs)
 end
 
 """
-    build(s::BasicInput, computejob::ComputeJob, inputs::Inputs)
+    build(s::ExponentialInput, computejob::ComputeJob, inputs::Inputs)
 
 Set default parameters for emp2d and generate the necessary input files.
 
 If any of `inputs.DFTfreqs` is greater than 50 kHz, the [`ricker`](@ref) source is used.
 Otherwise, the [`linear_exponential`](@ref) source is used.
 """
-function build(s::BasicInput, computejob::ComputeJob, inputs::Inputs)
+function build(s::ExponentialInput, computejob::ComputeJob, inputs::Inputs)
     prepbuild!(s, computejob, inputs)
 
     all(s.b_dips .≈ π/2) || @warn "Segment magnetic field is not vertical"
