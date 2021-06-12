@@ -22,7 +22,7 @@ function generatejson()
     # Outputs
     output_ranges = collect(0:5e3:2500e3)
 
-    input = LMP.BasicInput()
+    input = LMP.ExponentialInput()
     input.name = "homogeneous1"
     input.description = "homogeneous ionosphere"
     input.datetime = Dates.now()
@@ -69,17 +69,17 @@ function generate_batchbasic()
     # Outputs
     output_ranges = collect(0:20e3:2000e3)
 
-    binput = BatchInput{BasicInput}()
+    binput = BatchInput{ExponentialInput}()
     binput.name = "batchbasic"
-    binput.description = "Test BatchInput with BasicInput"
+    binput.description = "Test BatchInput with ExponentialInput"
     binput.datetime = Dates.now()
 
-    inputs = Vector{BasicInput}(undef, N)
+    inputs = Vector{ExponentialInput}(undef, N)
     for i in eachindex(inputs)
-        input = BasicInput()
+        input = ExponentialInput()
 
         input.name = "batchbasic"
-        input.description = "BasicInput $i"
+        input.description = "ExponentialInput $i"
         input.datetime = binput.datetime
         input.segment_ranges = segment_ranges
         input.hprimes = hprimes[:,i]
@@ -126,17 +126,17 @@ function largebatchinput()
     # Outputs
     output_ranges = collect(0:20e3:2000e3)
 
-    binput = BatchInput{BasicInput}()
+    binput = BatchInput{ExponentialInput}()
     binput.name = "largebatchinput"
-    binput.description = "Test BatchInput with BasicInput"
+    binput.description = "Test BatchInput with ExponentialInput"
     binput.datetime = Dates.now()
 
-    inputs = Vector{BasicInput}(undef, N)
+    inputs = Vector{ExponentialInput}(undef, N)
     for i in eachindex(inputs)
-        input = BasicInput()
+        input = ExponentialInput()
 
         input.name = "batch"
-        input.description = "BasicInput $i"
+        input.description = "ExponentialInput $i"
         input.datetime = binput.datetime
         input.segment_ranges = segment_ranges
         input.hprimes = hprimes

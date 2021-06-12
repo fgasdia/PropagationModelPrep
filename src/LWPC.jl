@@ -70,7 +70,7 @@ end
 
 Write LWPC `.inp` and `.ndx` files.
 """
-function build(input::BasicInput, computejob)
+function build(input::ExponentialInput, computejob)
     if computejob.runname != input.name
         @info "Updating computejob runname to $(input.name)"
         computejob.runname = input.name
@@ -95,7 +95,7 @@ randtransmittername() = randstring('a':'z', 10)
 """
     writeinp(input, computejob)
 """
-function writeinp(input::BasicInput, computejob)
+function writeinp(input::ExponentialInput, computejob)
     length(input.output_ranges) == 1 &&
         throw(ArgumentError("`output_ranges` with length 1 is not currently supported."))
 
@@ -167,7 +167,7 @@ end
 """
     writendx(input, computejob)
 """
-function writendx(input::BasicInput, computejob)
+function writendx(input::ExponentialInput, computejob)
     exepath = computejob.exefile
     lwpcpath, exename = splitdir(exepath)
     runname = computejob.runname
@@ -228,15 +228,15 @@ function runjob(computejob::Local)
 end
 
 """
-    build_runjob(input::BasicInput, computejob; submitjob=true)
+    build_runjob(input::ExponentialInput, computejob; submitjob=true)
 
 Construct the LWPC files for `input`, and if `submitjob` is true, run LWPC and return results
 as a `BasicOutput`.
 
-No matter if `computejob` is parallel or not, `input::BasicInput` will be run with a single
+No matter if `computejob` is parallel or not, `input::ExponentialInput` will be run with a single
 process.
 """
-function build_runjob(input::BasicInput, computejob; submitjob=true)
+function build_runjob(input::ExponentialInput, computejob; submitjob=true)
     exefile, exeext = splitext(computejob.exefile)
     lwpcpath, exefilename = splitdir(exefile)
 
@@ -298,7 +298,7 @@ of the file "C:\\LWPCv21_N\\lwpcDAT.loc" in each of "N" to "C:\\LWPCv21_N\\Data\
 !!! note
     The `submitjob` argument is ignored if `computejob` is `LocalParallel`.
 """
-function build_runjob(batchinput::BatchInput{BasicInput}, computejob::LocalParallel; submitjob=true)
+function build_runjob(batchinput::BatchInput{ExponentialInput}, computejob::LocalParallel; submitjob=true)
     exefile, exeext = splitext(computejob.exefile)
     lwpcpath, exefilename = splitdir(exefile)
 
@@ -460,7 +460,7 @@ function build_runjob(batchinput::BatchInput{BasicInput}, computejob::LocalParal
     return batch
 end
 
-function build_runjob(batchinput::BatchInput{BasicInput}, computejob::Local; submitjob=true)
+function build_runjob(batchinput::BatchInput{ExponentialInput}, computejob::Local; submitjob=true)
     exefile, exeext = splitext(computejob.exefile)
     lwpcpath, exefilename = splitdir(exefile)
 
