@@ -1,3 +1,7 @@
+#==
+Distribute copies of the LWPC folder on your Windows computer for parallel operation.
+==#
+
 nums = 0:15
 
 for n in nums

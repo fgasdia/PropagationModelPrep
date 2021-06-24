@@ -1,4 +1,4 @@
-using Test, Dates
+using Test, Dates, Statistics
 using JSON3
 using LongwaveModePropagator
 const LMP = LongwaveModePropagator
@@ -202,7 +202,7 @@ function test_lwpclocal()
     computejob = Local(scenarioname, ".", "C:\\LWPCv21\\lwpm.exe", 90)
 
     exepath = computejob.exefile
-    lwpcpath, exename = splitdir(exepath)
+    lwpcpath, _ = splitdir(exepath)
 
     logfile = joinpath(lwpcpath, "cases", scenarioname*".log")
     inpfile = joinpath(lwpcpath, "cases", scenarioname*".inp")
@@ -212,6 +212,11 @@ function test_lwpclocal()
 
     output = LWPC.run(scenarioname*".json", computejob)
     @test output isa BasicOutput
+
+    # Compare to LMP
+    loutput = propagate(scenarioname*".json")
+    @test mean(abs, output.amplitude .- loutput.amplitude) < 0.2
+    @test rad2deg(mean(abs, output.phase .- loutput.phase)) < 1
 
     # Test `deletefiles`
     @test isfile(logfile)
@@ -267,7 +272,7 @@ function test_lwpclocal_batch()
     computejob = Local(scenarioname, ".", "C:\\LWPCv21\\lwpm.exe", 90)
 
     exepath = computejob.exefile
-    lwpcpath, exename = splitdir(exepath)
+    lwpcpath, _ = splitdir(exepath)
 
     inpfile = joinpath(lwpcpath, "cases", scenarioname*".inp")
     ndxfile = joinpath(lwpcpath, "cases", scenarioname*".ndx")
@@ -326,6 +331,7 @@ end
     end
 
     @testset "EMP2D" begin
+        @info "Testing EMP2D"
         test_emp2dinputs()
 
         @test_logs (:info,
@@ -338,8 +344,9 @@ end
     end
 
 
-    if Sys.iswindows()
+    if Sys.iswindows() && isfile("C:\\LWPCv21\\lwpm.exe")
         @testset "LWPC" begin
+            @info "Testing LWPC"
             test_lwpclocal()
             test_lwpclocal_batch()
         end
@@ -350,6 +357,7 @@ end
     rm("homogeneous2", force=true, recursive=true)
     isfile("batchbasic.json") && rm("batchbasic.json")
     isfile("homogeneous1.json") && rm("homogeneous1.json")
+    isfile("homogeneous1_output.json") && rm("homogeneous1_output.json")
     isfile("homogeneous1_lwpc.json") && rm("homogeneous1_lwpc.json")
     isfile("largebatchinput_lwpc.json") && rm("largebatchinput_lwpc.json")
 end
