@@ -13,7 +13,7 @@ mutable struct ProcessInfo
     process::Union{Base.Process,Nothing}
     starttime::Float64
 
-    ProcessInfo() = new(0,nothing,0.0)
+    ProcessInfo() = new(0, nothing, 0.0)
 end
 start!(p::ProcessInfo) = (p.starttime = time())
 elapsed(p::ProcessInfo) = time() - p.starttime
@@ -93,14 +93,19 @@ in LWPC's xmtr.lis, LWPC will break.
 randtransmittername() = randstring('a':'z', 10)
 
 """
-    writeinp(input, computejob)
+    writeinp(input::ExponentialInput, computejob)
+
+Write `.inp` file for LWPC using an `ExponentialInput` from LongwaveModePropagator.jl.
+
+Hardcoded to use a transmitter power of 100 kW to match LongwaveModePropagator when run
+using an `ExponentialInput`.
 """
 function writeinp(input::ExponentialInput, computejob)
     length(input.output_ranges) == 1 &&
         throw(ArgumentError("`output_ranges` with length 1 is not currently supported."))
 
     exepath = computejob.exefile
-    lwpcpath, exename = splitdir(exepath)
+    lwpcpath, _ = splitdir(exepath)
     runname = computejob.runname
 
     freq = input.frequency/1e3  # in kHz
@@ -128,7 +133,7 @@ function writeinp(input::ExponentialInput, computejob)
         write(f, "file-ndx    cases\\", endline)
         write(f, "case-id     $runname", endline)
         write(f, "tx          $runname", endline)
-        write(f, "tx-data     $(randtransmittername())  $freq  0.0  0.0  1.0  0.0  0.000  0.0", endline)
+        write(f, "tx-data     $(randtransmittername())  $freq  0.0  0.0  100.0  0.0  0.000  0.0", endline)
         write(f, "receivers   0.0000  0.0000", endline)
         write(f, "range-max   $max_range", endline)
         write(f, "ionosphere  $ionosphere", endline)
@@ -169,7 +174,7 @@ end
 """
 function writendx(input::ExponentialInput, computejob)
     exepath = computejob.exefile
-    lwpcpath, exename = splitdir(exepath)
+    lwpcpath, _ = splitdir(exepath)
     runname = computejob.runname
 
     endline = "\n"
@@ -237,8 +242,8 @@ No matter if `computejob` is parallel or not, `input::ExponentialInput` will be 
 process.
 """
 function build_runjob(input::ExponentialInput, computejob; submitjob=true)
-    exefile, exeext = splitext(computejob.exefile)
-    lwpcpath, exefilename = splitdir(exefile)
+    exefile, _ = splitext(computejob.exefile)
+    lwpcpath, _ = splitdir(exefile)
 
     build(input, computejob)
 
@@ -461,9 +466,6 @@ function build_runjob(batchinput::BatchInput{ExponentialInput}, computejob::Loca
 end
 
 function build_runjob(batchinput::BatchInput{ExponentialInput}, computejob::Local; submitjob=true)
-    exefile, exeext = splitext(computejob.exefile)
-    lwpcpath, exefilename = splitdir(exefile)
-
     batch = BatchOutput{BasicOutput}()
     batch.name = batchinput.name
     batch.description = batchinput.description
