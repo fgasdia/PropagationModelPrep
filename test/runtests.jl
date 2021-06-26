@@ -215,14 +215,10 @@ function test_lwpclocal()
 
     # Compare to LMP
     loutput = propagate(scenarioname*".json")
-    ares = mean(abs, output.amplitude .- loutput.amplitude) < 0.2
-    pres = rad2deg(mean(abs, output.phase .- loutput.phase)) < 1
 
-    if !ares && !pres
-        @warn "Comparison to LongwaveModePropagator failed. This is expected for LongwaveModePropagator `v0.2`."
-    end
-    @test ares
-    @test pres
+    tres = @test mean(abs, output.amplitude .- loutput.amplitude) < 0.2
+    isa(tres, Test.Pass) || @info "Comparison to LongwaveModePropagator is expected to fail for LongwaveModePropagator `v0.2`."
+    @test rad2deg(mean(abs, output.phase .- loutput.phase)) < 1
 
     # Test `deletefiles`
     @test isfile(logfile)
