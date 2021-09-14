@@ -20,8 +20,8 @@ elapsed(p::ProcessInfo) = time() - p.starttime
 
 
 """
-    run(file, computejob; submitjob=true, savefile=true)
-    run(input, computejob; submitjob=true, savefile=true)
+    run(file, computejob; submitjob=true, savefile=true, sleeptime=0.1)
+    run(input, computejob; submitjob=true, savefile=true, sleeptime=0.1)
 
 Generate the input files and run the LWPC code for the scenario described by `file` with the
 compute parameters defined by `computejob`. If `file` does not contain a `BatchInput` and
@@ -29,20 +29,23 @@ compute parameters defined by `computejob`. If `file` does not contain a `BatchI
 
 The output is written to a `.json` file if `savefile` is `true`.
 
+`sleeptime` is the amount of time to `sleep` in seconds in between submitting jobs to
+`batch_runjob`.
+
 If `computejob` is a `LocalParallel`, it is assumed that there exist directories named
 "C:\\LWPCv21_0" to "C:\\LWPCv21_N" where "N" is `computejob.numnodes`. In each directory
 it is assumed there is an associated executable "lwpm0.exe" to "lwpmN.exe". The `computejob`
 should have `exefile = C:\\LWPCv21\\lwpm.exe`.
 """
-function run(file::String, computejob; submitjob=true, savefile=true)
+function run(file::String, computejob; submitjob=true, savefile=true, sleeptime=0.1)
     isfile(file) || error("$file is not a valid file name")
 
     s = LMP.parse(file)
 
-    run(s, computejob; submitjob=submitjob, savefile=savefile)
+    run(s, computejob; submitjob, savefile, sleeptime)
 end
 
-function run(input, computejob; submitjob=true, savefile=true)
+function run(input, computejob; submitjob=true, savefile=true, sleeptime=0.1)
     rundir = computejob.rundir
 
     if !isdir(rundir)
@@ -52,7 +55,7 @@ function run(input, computejob; submitjob=true, savefile=true)
         mkpath(newpath)
     end
 
-    output = build_runjob(input, computejob; submitjob=submitjob)
+    output = build_runjob(input, computejob; submitjob, sleeptime)
 
     if savefile
         json_str = JSON3.write(output)
@@ -233,7 +236,7 @@ function runjob(computejob::Local)
 end
 
 """
-    build_runjob(input::ExponentialInput, computejob; submitjob=true)
+    build_runjob(input::ExponentialInput, computejob; submitjob=true, sleeptime=0.1)
 
 Construct the LWPC files for `input`, and if `submitjob` is true, run LWPC and return results
 as a `BasicOutput`.
@@ -241,7 +244,7 @@ as a `BasicOutput`.
 No matter if `computejob` is parallel or not, `input::ExponentialInput` will be run with a single
 process.
 """
-function build_runjob(input::ExponentialInput, computejob; submitjob=true)
+function build_runjob(input::ExponentialInput, computejob; submitjob=true, sleeptime=0.1)
     exefile, _ = splitext(computejob.exefile)
     lwpcpath, _ = splitdir(exefile)
 
@@ -258,7 +261,7 @@ function build_runjob(input::ExponentialInput, computejob; submitjob=true)
         completed = false
         while !completed && (time() - t0 < computejob.walltime)
             if process_exited(process)
-                sleep(0.1)
+                sleep(sleeptime)
                 dist, amp, phase = readlog(joinpath(lwpcpath, "cases", input.name*".log"))
                 dist *= 1e3  # convert to m
                 phase .= deg2rad.(phase)  # convert from deg to rad
@@ -270,7 +273,7 @@ function build_runjob(input::ExponentialInput, computejob; submitjob=true)
 
                 completed = true
             else
-                sleep(0.1)
+                sleep(sleeptime)
             end
         end
         if !completed
@@ -288,7 +291,7 @@ function build_runjob(input::ExponentialInput, computejob; submitjob=true)
 end
 
 """
-    build_runjob(batchinput::BatchInput, computejob; submitjob=true)
+    build_runjob(batchinput::BatchInput, computejob; submitjob=true, sleeptime=0.1)
 
 For each of `batchinput.inputs`, construct the input files and run LWPC, returning results as a
 `BatchOutput{BasicOutput}`.
@@ -300,10 +303,14 @@ should have `exefile = C:\\LWPCv21\\lwpm.exe`. It is also recommended to update 
 of the file "C:\\LWPCv21_N\\lwpcDAT.loc" in each of "N" to "C:\\LWPCv21_N\\Data\\".
 ".
 
+`sleeptime` is the amount of time to `sleep` in seconds between submitting jobs.
+
 !!! note
     The `submitjob` argument is ignored if `computejob` is `LocalParallel`.
 """
-function build_runjob(batchinput::BatchInput{ExponentialInput}, computejob::LocalParallel; submitjob=true)
+function build_runjob(batchinput::BatchInput{ExponentialInput}, computejob::LocalParallel;
+    submitjob=true, sleeptime=0.1)
+
     exefile, exeext = splitext(computejob.exefile)
     lwpcpath, exefilename = splitdir(exefile)
 
@@ -345,7 +352,7 @@ function build_runjob(batchinput::BatchInput{ExponentialInput}, computejob::Loca
                 @debug "Process $(pid-1) has status exited with proc.inputidx: $ii"
                 @debug "Trying to read: $(joinpath(newlwpcpath, "cases", inputs[ii].name*".log"))"
 
-                sleep(0.01)
+                sleep(0.05)
                 dist, amp, phase = readlog(joinpath(newlwpcpath, "cases", inputs[ii].name*".log"))
                 dist *= 1e3  # convert to m
                 phase .= deg2rad.(phase)  # convert from deg to rad
@@ -404,7 +411,7 @@ function build_runjob(batchinput::BatchInput{ExponentialInput}, computejob::Loca
                 i += 1
             end
         end
-        sleep(0.01)  # somehow without this the first process "appears" to time out
+        sleep(sleeptime)  # somehow without this the first process "appears" to time out
     end
 
     @debug "$(count(completed)) inputs completed"
@@ -418,7 +425,7 @@ function build_runjob(batchinput::BatchInput{ExponentialInput}, computejob::Loca
             newlwpcpath = lwpcpath*"_"*string(pid-1)
             ii = proc.inputidx
             if !completed[ii] && process_exited(proc.process)
-                sleep(0.1)
+                sleep(sleeptime)
                 dist, amp, phase = readlog(joinpath(newlwpcpath, "cases", inputs[ii].name*".log"))
                 dist *= 1e3  # convert to m
                 phase .= deg2rad.(phase)  # convert from deg to rad
@@ -456,7 +463,7 @@ function build_runjob(batchinput::BatchInput{ExponentialInput}, computejob::Loca
                 @logprogress count(completed)/numinputs
             end
         end
-        sleep(0.1)
+        sleep(sleeptime)
     end
     end  # withprogress 
 
