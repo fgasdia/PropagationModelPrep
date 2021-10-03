@@ -36,6 +36,9 @@ for n in nums
     open(joinpath(rootdir, "a.loc"), "w") do writer
         write(writer, joinpath(rootdir, "data", ""))
     end
+    open(joinpath(rootdir, "lwpcDAT.loc"), "w") do writer
+        write(writer, joinpath(rootdir, "Data"), "")
+    end
 
     # Build LWPC
     run(`cmd /c cd $rootdir '&&' buildLWPC.cmd`)

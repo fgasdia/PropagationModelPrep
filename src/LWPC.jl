@@ -211,7 +211,10 @@ function deletefiles(lwpcpath, runname)
     end
 
     logfilepath = joinpath(lwpcpath, "cases", runname*".log")
-    isfile(logfilepath) && rm(logfilepath)
+    if isfile(logfilepath)
+        @debug "Removing $logfilepath"
+        rm(logfilepath)
+    end
 end
 deletefiles(computejob) = deletefiles(splitdir(computejob.exefile)[1], computejob.runname)
 
@@ -260,9 +263,15 @@ function build_runjob(input::ExponentialInput, computejob; submitjob=true, sleep
         process = runjob(computejob)
         completed = false
         while !completed && (time() - t0 < computejob.walltime)
-            if process_exited(process)
-                sleep(sleeptime)
-                dist, amp, phase = readlog(joinpath(lwpcpath, "cases", input.name*".log"))
+            if !process_running(process)
+                # sleep(0.1)
+
+                logfile = joinpath(newlwpcpath, "cases", inputs[ii].name*".log")
+                if !isopenable(logfile)
+                    continue
+                end
+
+                dist, amp, phase = readlog(logfile)
                 dist *= 1e3  # convert to m
                 phase .= deg2rad.(phase)  # convert from deg to rad
 
@@ -272,9 +281,8 @@ function build_runjob(input::ExponentialInput, computejob; submitjob=true, sleep
                 output.phase = phase
 
                 completed = true
-            else
-                sleep(sleeptime)
             end
+            sleep(0.2)
         end
         if !completed
             @warn "LWPC time limit exceeded. $process"
@@ -347,13 +355,48 @@ function build_runjob(batchinput::BatchInput{ExponentialInput}, computejob::Loca
                 proc.process = runjob(cj)
                 @debug "Input $i submitted"
                 i += 1
-            elseif process_exited(proc.process)
+            elseif elapsed(proc) > computejob.walltime
+                # Process timed out
+                @warn "LWPC time limit exceeded. $(proc.process)"
+                @debug "Process $(pid-1) has exceeded walltime with proc.inputidx: $ii"
+                
+                kill(proc.process)
+                sleep(1)
+
+                output = BasicOutput()
+                output.name = inputs[ii].name
+                output.description = inputs[ii].description
+                output.datetime = inputs[ii].datetime
+
+                output.output_ranges = [NaN]
+                output.amplitude = [NaN]
+                output.phase = [NaN]
+
+                batch.outputs[ii] = output
+                completed[ii] = true
+                @logprogress count(completed)/numinputs
+                @debug "Input $ii is completed"
+
+                # Start the next process
+                # sleep(0.2)
+                cj = Local(inputs[i].name, newlwpcpath, newexefile, computejob.walltime)
+                build(inputs[i], cj)
+                proc.inputidx = i
+                start!(proc)
+                proc.process = runjob(cj)
+                @debug "Input $i submitted"
+                i += 1
+            elseif !process_running(proc.process)
                 # Process is completed
                 @debug "Process $(pid-1) has status exited with proc.inputidx: $ii"
                 @debug "Trying to read: $(joinpath(newlwpcpath, "cases", inputs[ii].name*".log"))"
+                
+                logfile = joinpath(newlwpcpath, "cases", inputs[ii].name*".log")
+                if !isopenable(logfile)
+                    continue
+                end
 
-                sleep(0.05)
-                dist, amp, phase = readlog(joinpath(newlwpcpath, "cases", inputs[ii].name*".log"))
+                dist, amp, phase = readlog(logfile)
                 dist *= 1e3  # convert to m
                 phase .= deg2rad.(phase)  # convert from deg to rad
 
@@ -380,70 +423,24 @@ function build_runjob(batchinput::BatchInput{ExponentialInput}, computejob::Loca
                 proc.process = runjob(cj)
                 @debug "Input $i submitted"
                 i += 1
-            elseif elapsed(proc) > computejob.walltime
-                # Process timed out
-                @warn "LWPC time limit exceeded. $(proc.process)"
-                @debug "Process $(pid-1) has exceeded walltime with proc.inputidx: $ii"
-                
-                kill(proc.process)
-
-                output = BasicOutput()
-                output.name = inputs[ii].name
-                output.description = inputs[ii].description
-                output.datetime = inputs[ii].datetime
-
-                output.output_ranges = [NaN]
-                output.amplitude = [NaN]
-                output.phase = [NaN]
-
-                batch.outputs[ii] = output
-                completed[ii] = true
-                @logprogress count(completed)/numinputs
-                @debug "Input $ii is completed"
-
-                # Start the next process
-                cj = Local(inputs[i].name, newlwpcpath, newexefile, computejob.walltime)
-                build(inputs[i], cj)
-                proc.inputidx = i
-                start!(proc)
-                proc.process = runjob(cj)
-                @debug "Input $i submitted"
-                i += 1
             end
         end
-        sleep(sleeptime)  # somehow without this the first process "appears" to time out
+        sleep(0.2)  # somehow without this the first process appears to time out
     end
 
     @debug "$(count(completed)) inputs completed"
     @debug "All inputs submitted"
 
     # Remaining results
+    sleep(0.2)
     while any(!, completed)
         for (pid, proc) in enumerate(processes)
             isnothing(proc.process) && continue
 
             newlwpcpath = lwpcpath*"_"*string(pid-1)
             ii = proc.inputidx
-            if !completed[ii] && process_exited(proc.process)
-                sleep(sleeptime)
-                dist, amp, phase = readlog(joinpath(newlwpcpath, "cases", inputs[ii].name*".log"))
-                dist *= 1e3  # convert to m
-                phase .= deg2rad.(phase)  # convert from deg to rad
 
-                output = BasicOutput()
-                output.name = inputs[ii].name
-                output.description = inputs[ii].description
-                output.datetime = inputs[ii].datetime
-
-                # Strip last index of each field because they're 0 (and then inf)
-                output.output_ranges = round.(dist, digits=-3)  # fix floating point, rounded to nearest km
-                output.amplitude = amp
-                output.phase = phase
-
-                batch.outputs[ii] = output
-                completed[ii] = true
-                @logprogress count(completed)/numinputs
-            elseif elapsed(proc) > computejob.walltime
+            if elapsed(proc) > computejob.walltime
                 # Process timed out
                 @warn "LWPC time limit exceeded. $(proc.process)"
                     
@@ -461,9 +458,34 @@ function build_runjob(batchinput::BatchInput{ExponentialInput}, computejob::Loca
                 batch.outputs[ii] = output
                 completed[ii] = true
                 @logprogress count(completed)/numinputs
+            elseif !completed[ii] && !process_running(proc.process)
+                # sleep(0.2)
+
+                logfile = joinpath(newlwpcpath, "cases", inputs[ii].name*".log")
+                if !isopenable(logfile)
+                    continue
+                end
+
+                dist, amp, phase = readlog(logfile)
+                dist *= 1e3  # convert to m
+                phase .= deg2rad.(phase)  # convert from deg to rad
+
+                output = BasicOutput()
+                output.name = inputs[ii].name
+                output.description = inputs[ii].description
+                output.datetime = inputs[ii].datetime
+
+                # Strip last index of each field because they're 0 (and then inf)
+                output.output_ranges = round.(dist, digits=-3)  # fix floating point, rounded to nearest km
+                output.amplitude = amp
+                output.phase = phase
+
+                batch.outputs[ii] = output
+                completed[ii] = true
+                @logprogress count(completed)/numinputs
             end
         end
-        sleep(sleeptime)
+        sleep(0.2)
     end
     end  # withprogress 
 
@@ -472,7 +494,7 @@ function build_runjob(batchinput::BatchInput{ExponentialInput}, computejob::Loca
     return batch
 end
 
-function build_runjob(batchinput::BatchInput{ExponentialInput}, computejob::Local; submitjob=true)
+function build_runjob(batchinput::BatchInput{ExponentialInput}, computejob::Local; submitjob=true, sleeptime=0.1)
     batch = BatchOutput{BasicOutput}()
     batch.name = batchinput.name
     batch.description = batchinput.description
@@ -481,7 +503,7 @@ function build_runjob(batchinput::BatchInput{ExponentialInput}, computejob::Loca
     
     for i in eachindex(batchinput.inputs)
         cj = Local(batchinput.inputs[i].name, computejob.rundir, computejob.exefile, computejob.walltime)
-        o = build_runjob(batchinput.inputs[i], cj; submitjob=submitjob)
+        o = build_runjob(batchinput.inputs[i], cj; submitjob, sleeptime)
         batch.outputs[i] = o
     end
 
@@ -536,6 +558,20 @@ function readlog(file)
     end
 
     return dist, amp, phase
+end
+
+"""
+    isopenable(filename)
+
+Return `true` if `filename` can be opened; otherwise, return `false`.
+"""
+function isopenable(filename)
+    try
+        open(identity, filename)
+        return true
+    catch
+        return false
+    end
 end
 
 end  # module
