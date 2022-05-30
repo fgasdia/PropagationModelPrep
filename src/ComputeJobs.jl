@@ -64,6 +64,8 @@ end
 
 Mutable struct holding `runname`, `rundir`, and `exefile` strings refering to paths on the
 local machine.
+
+`walltime` is in seconds - it is a time limit per run
 """
 mutable struct Local <: ComputeJob
     runname::String

@@ -5,6 +5,42 @@ const LMP = LongwaveModePropagator
 
 using PropagationModelPrep
 
+function shorthomogeneous()
+    # Waveguide definition
+    segment_ranges = [0]
+    hprimes = [75]
+    betas = [0.32]
+    b_mags = fill(50e-6, length(segment_ranges))
+    b_dips = fill(π/2, length(segment_ranges))
+    b_azs = fill(0.0, length(segment_ranges))
+    ground_sigmas = [0.001]
+    ground_epsrs = [15]
+
+    # Transmitter
+    frequency = 20e3
+
+    # Outputs
+    output_ranges = collect(0:5e3:1000e3)
+
+    input = LMP.ExponentialInput()
+    input.name = "shorthomogeneous"
+    input.description = "homogeneous ionosphere"
+    input.datetime = Dates.now()
+
+    input.segment_ranges = segment_ranges
+    input.hprimes = hprimes
+    input.betas = betas
+    input.b_mags = b_mags
+    input.b_dips = b_dips
+    input.b_azs = b_azs
+    input.ground_sigmas = ground_sigmas
+    input.ground_epsrs = ground_epsrs
+    input.frequency = frequency
+    input.output_ranges = output_ranges
+
+    return input
+end
+
 function generatejson()
     # Waveguide definition
     segment_ranges = [0]
@@ -186,15 +222,50 @@ function filename_error()
     EMP2D.run("homogeneous999.json", computejob; submitjob=false)
 end
 
-function test_emp2dinputs()
-    computejob = Summit("homogeneous1", "homogeneous1", "dummy_exe", 12, "01:00:00")
-    inputs = EMP2D.Inputs(6366e3, 110e3, 50e3, 200, 100, 4000e3, 100, [24e3])
+function test_emp2dinputs(cjtype)
+    if cjtype == Summit
+        computejob = Summit("homogeneous1", "homogeneous1", "dummy_exe", 12, "01:00:00")
+    elseif cjtype == LocalParallel
+        computejob = LocalParallel("homogeneous1", "homogeneous1", "dummy_exe", 4, 3600)
+    end
+    inputs = EMP2D.Inputs(4000e3, [24e3], 6366e3, 110e3, 50e3, 200, 100, 100)
     EMP2D.run("homogeneous1.json", computejob; inputs=inputs, submitjob=false)
 
     testinputs = EMP2D.readinputs("homogeneous1")
     for field in fieldnames(EMP2D.Inputs)
         @test getfield(inputs, field) == getfield(testinputs, field)
     end
+end
+
+"""
+    test_emp2d_localparallel
+
+This is not meant to be run as part of the test suite. It will trigger a local run of
+EMP2D and is likely to take ~1 hour.
+"""
+function test_emp2d_localparallel()
+    exepath = "N:\\research\\LAIR\\emp2d\\emp2\\emp2d-fork2d_windows.exe"
+    computejob = LocalParallel("shorthomogeneous", "shorthomogeneous", exepath, 4, 120)
+    s = shorthomogeneous()
+    inputs = EMP2D.Inputs(1500e3, (s.frequency,))
+    inputs.savefields = Int32[1, 0, 0, 0, 0, 0]
+    EMP2D.run(s, computejob; inputs)
+
+    output = EMP2D.process("shorthomogeneous")
+
+    lmpoutput = LMP.buildrun(s)
+
+    compmask = 1:10:2001
+    @test output.output_ranges[compmask] == lmpoutput.output_ranges
+    @test mean(abs, (output.amplitude[compmask] .+ 102) .- lmpoutput.amplitude) < 1
+
+    # using Plots
+    # lwpccomputejob = Local("shorthomogeneous", ".", "C:\\LWPCv21\\lwpm.exe", 90)
+    # lwpcoutput = LWPC.run(s, lwpccomputejob)
+    # plot(output.output_ranges/1000, output.amplitude .+ 102, label="EMP2D",
+    #      xlims=(0, 1000), ylims=(0, 100))
+    # plot!(lmpoutput.output_ranges/1000, lmpoutput.amplitude, label="LMP")
+    # plot!(lwpcoutput.output_ranges/1000, lwpcoutput.amplitude, label="LWPC")
 end
 
 function test_lwpclocal()
@@ -334,7 +405,7 @@ end
 
     @testset "EMP2D" begin
         @info "Testing EMP2D"
-        test_emp2dinputs()
+        test_emp2dinputs(LocalParallel)
 
         @test_logs (:info,
             "Updating computejob runname to homogeneous1") mismatchedrunnames()
@@ -343,8 +414,9 @@ end
         rundir = joinpath("homogeneous2", "homogeneous1", "")
         @test_logs (:info, "Running in $rundir") (:info, "Creating $rundir") newrundir()
         @test_throws ErrorException filename_error()
-    end
 
+        @info "`test_emp2d_localparallel` must be run manually. Requires ~1 hour."
+    end
 
     if Sys.iswindows() && isfile("C:\\LWPCv21\\lwpm.exe")
         @testset "LWPC" begin

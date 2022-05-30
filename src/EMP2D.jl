@@ -28,17 +28,18 @@ end
 """
     Inputs
 
-Mutable struct that holds fields of `Inputs.dat` for `emp2d-slimfork.cpp`.
+Mutable struct that holds fields of `Inputs.dat` for `emp2d-fork2d_windows.cpp`.
+
+!!! warning
+
+    When `Inputs` is initialized with no arguments (`Inputs()`) all fields will contain
+    `undef` or random values.
 """
 mutable struct Inputs
     Re::Float64
     dopml_top::Int32
     dopml_wall::Int32
     doionosphere::Int32
-    doioniz::Int32
-    doelve::Int32
-    dodetach::Int32
-    dotransmitter::Int32
     savefields::Vector{Int32}  # always size 6
     groundmethod::Int32
     maxalt::Float64
@@ -53,31 +54,18 @@ mutable struct Inputs
     tsteps::Int32
     sig::Float64
     sigm::Float64
-    camdist::Float64
-    camalt::Float64
-    elvesteps::Int32
     numfiles::Int32
-    planet::Int32
     decfactor::Int32
-    nprobes::Int32
-    prober::Vector{Int32}
-    probet::Vector{Int32}
-    dogwave::Int32
-    gwavemag::Float64
-    gwavemaxalt::Float64
-    gwavekh::Float64
-    nonlinearstart::Int32
     doDFT::Int32
     numDFTfreqs::Int32
     DFTfreqs::Vector{Float64}
     read2Dionosphere::Int32
-
     Inputs() = new()
 end
 
 """
-    Inputs(Re, maxalt, stepalt, dr1, dr2, range, drange, DFTfreqs,
-        dt=1e-7, decfactor=2, savefields=[0, 0, 0, 0, 0, 0])
+    Inputs(range, DFTfreqs, Re=6369e3, maxalt=110e3, stepalt=50e3, dr1=500, dr2=250,
+        drange=500, dt=1e-7, decfactor=2, savefields=[1, 0, 0, 0, 0, 0])
 
 Outer constructor for the `Inputs` mutable struct.
 
@@ -87,26 +75,26 @@ type as necessary.
 
 Arguments:
 
-    - `Re` is Earth radius
-    - `maxalt` is altitude of top of ionosphere (typically 110e3)
-    - `stepalt` is altitude of change of grid resolution (typically 50e3)
-    - `dr1` is ionosphere grid cell resolution below `stepalt` (typically 500)
-    - `dr2` is ionosphere grid cell resolution above `stepalt` (typically 250)
     - `range` is the maximum horizontal ground range to run the simulation to
-    - `drange` is the grid cell resolution along the range direction (typically 500)
     - `DFTfreqs` is a vector of frequencies to examine
+    - `Re` is Earth radius
+    - `maxalt` is altitude of top of ionosphere
+    - `stepalt` is altitude of change of grid resolution
+    - `dr1` is ionosphere grid cell resolution below `stepalt`
+    - `dr2` is ionosphere grid cell resolution above `stepalt`
+    - `drange` is the grid cell resolution along the range direction
     - `dt=1e-7` is the timestep
     - `decfactor=2` is the decimation factor for output fields. Larger values
         are greater decimation
-    - `savefields=[0, 0, 0, 0, 0, 0]` turns on output for E, J, H, K, and D when
+    - `savefields=[1, 0, 0, 0, 0, 0]` turns on output for E, J, H, K, and D when
         an entry is greater than 0. The last field (6) is not supported.
 
 !!! note
 
     All units are SI (mks).
 """
-function Inputs(Re, maxalt, stepalt, dr1, dr2, range, drange, DFTfreqs,
-    dt=Float64(1e-7), decfactor=Int32(2), savefields=Int32[1, 0, 0, 0, 0, 0])
+function Inputs(range, DFTfreqs, Re=6369e3, maxalt=110e3, stepalt=50e3, dr1=500, dr2=250,
+    drange=500, dt=Float64(1e-7), decfactor=Int32(2), savefields=Int32[1, 0, 0, 0, 0, 0])
 
     # decfactor: decimate outputs before writing (for 100m, probably want this to be 4 or 5)
     # savefields = [E J H N/A N/A N/A]
@@ -119,38 +107,22 @@ function Inputs(Re, maxalt, stepalt, dr1, dr2, range, drange, DFTfreqs,
     setfield!(s, :dopml_top, Int32(1))
     setfield!(s, :dopml_wall, Int32(1))
     setfield!(s, :doionosphere, Int32(1))
-    setfield!(s, :doioniz, Int32(0))
-    setfield!(s, :doelve, Int32(0))
-    setfield!(s, :dodetach, Int32(0))
-    setfield!(s, :dotransmitter, Int32(0))
     # savefields
     setfield!(s, :groundmethod, Int32(1))  # SIBC
     # maxalt
     # stepalt
-    setfield!(s, :dr0, Float64(0))  # not actually used b/c nground = 0
+    setfield!(s, :dr0, Float64(100))  # 100 m
     # dr1
     # dr2
-    setfield!(s, :nground, Int32(0))
+    setfield!(s, :nground, Int32(5))
     # range
     # drange
     # dt
     # tsteps
     setfield!(s, :sig, Float64(0))
     setfield!(s, :sigm, Float64(0))
-    setfield!(s, :camdist, Float64(0))
-    setfield!(s, :camalt, Float64(0))
-    setfield!(s, :elvesteps, Int32(0))
     setfield!(s, :numfiles, Int32(50)) # used to determine log file steps
-    setfield!(s, :planet, Int32(0)) # Earth
     # decfactor
-    setfield!(s, :nprobes, Int32(1))
-    setfield!(s, :prober, Int32[0])
-    setfield!(s, :probet, Int32[0])
-    setfield!(s, :dogwave, Int32(0))
-    setfield!(s, :gwavemag, Float64(0))
-    setfield!(s, :gwavemaxalt, Float64(0))
-    setfield!(s, :gwavekh, Float64(0))
-    setfield!(s, :nonlinearstart, Int32(0))
     setfield!(s, :doDFT, Int32(1))
     # numDFTfreqs
     # DFTfreqs
@@ -167,7 +139,7 @@ function Inputs(Re, maxalt, stepalt, dr1, dr2, range, drange, DFTfreqs,
     setfield!(s, :dt, convert(Float64, dt))
 
     tstepcoeff = 1.1
-    maxdist = sqrt(range^2 + maxalt^2)
+    maxdist = hypot(range, maxalt)
     tsteps = floor(Int32, tstepcoeff*maxdist/LMP.C0/dt)
     setfield!(s, :tsteps, Int32(tsteps))
 
@@ -179,7 +151,7 @@ function Inputs(Re, maxalt, stepalt, dr1, dr2, range, drange, DFTfreqs,
     setfield!(s, :savefields, convert(Vector{Int32}, savefields))
     setfield!(s, :decfactor, Int32(decfactor))
     setfield!(s, :numDFTfreqs, Int32(length(DFTfreqs)))
-    setfield!(s, :DFTfreqs, convert(Vector{Float64}, DFTfreqs))
+    setfield!(s, :DFTfreqs, convert(Vector{Float64}, collect(DFTfreqs)))
 
     return s
 end
@@ -192,7 +164,6 @@ Mutable struct for the source.dat input to emp2d-slimfork.cpp.
 mutable struct Source
     nalt_source::Int32
     nt_source::Int32
-    halfchlength::Int32
     source::Matrix{Float64}
 
     Source() = new()
@@ -222,12 +193,12 @@ function Source(inputs::Inputs, def=Defaults(), type=:linear_exponential)
     elseif type === :ricker
         source = ricker(def, inputs)
     end
+    @assert source isa Matrix{Float64}
 
     nt_source, nalt_source = size(source)
 
     setfield!(s, :nalt_source, Int32(nalt_source))
     setfield!(s, :nt_source, Int32(nt_source))
-    setfield!(s, :halfchlength, Int32(0))  # not used by emp2d
     setfield!(s, :source, source)
 
     return s
@@ -250,7 +221,7 @@ end
 
 Store `amp` and `phase` of a complex value.
 """
-struct Phasor{T}  # Float64 or Vector{Float64}
+struct Phasor{T}  # e.g. Float64 or Vector{Float64}
     amp::T
     phase::T
 end
@@ -291,7 +262,6 @@ function writeinputs(s::Inputs; path="")
     end
 end
 
-
 """
     readinputs(path)
 
@@ -305,22 +275,6 @@ function readinputs(path)
             if field == :savefields
                 tmp = fieldtype(Inputs, field)(undef, 6)
                 for i = 1:6
-                    v = read(f, eltype(fieldtype(Inputs, field)))
-                    tmp[i] = v
-                end
-                setfield!(inputs, field, tmp)
-            elseif field == :prober
-                nprobes = getfield(inputs, :nprobes)
-                tmp = fieldtype(Inputs, field)(undef, nprobes)
-                for i = 1:nprobes
-                    v = read(f, eltype(fieldtype(Inputs, field)))
-                    tmp[i] = v
-                end
-                setfield!(inputs, field, tmp)
-            elseif field == :probet
-                nprobes = getfield(inputs, :nprobes)
-                tmp = fieldtype(Inputs, field)(undef, nprobes)
-                for i = 1:nprobes
                     v = read(f, eltype(fieldtype(Inputs, field)))
                     tmp[i] = v
                 end
@@ -350,13 +304,10 @@ Write source.dat at `path` given `s`.
 """
 function writesource(s::Source; path="")
     open(joinpath(path,"source.dat"), "w") do f
-        for field in fieldnames(Source)
-            if field == :source
-                write(f, permutedims(getfield(s, :source)))  # for c++
-            else
-                write(f, getfield(s, field))
-            end
-        end
+        # note that alt is ncolumns and time is nrows (typically much greater than ncolumns)
+        write(f, getfield(s, :nalt_source))
+        write(f, getfield(s, :nt_source))
+        write(f, permutedims(getfield(s, :source)))  # for c++
     end
 end
 
@@ -367,9 +318,8 @@ Write ground.dat at `path` given `s`.
 """
 function writeground(s::Ground; path="")
     open(joinpath(path,"ground.dat"), "w") do f
-        for field in fieldnames(Ground)
-            write(f, getfield(s, field))
-        end
+        write(f, getfield(s, :gsigma))
+        write(f, getfield(s, :gepsilon))
     end
 end
 
@@ -397,6 +347,31 @@ function writebfield(Bmag, in::Inputs; path="")
 end
 
 """
+    moving_average(A::Vector)
+
+Moving average filter over `A` hardcoded with window size 5.
+
+Based on https://discourse.julialang.org/t/performance-input-on-my-code/16321/4
+but modified to handle ends like Matlab `smooth`.
+"""
+function moving_average(A::Vector)
+    cs = cumsum(A)
+    ret = similar(A)
+    ret[1] = A[1]
+    ret[2] = (A[1] + A[2] + A[3])/3
+    ret[3] = (A[1] + A[2] + A[3] + A[4] + A[5])/5
+    @inbounds for i = 3:length(ret)-6
+        ret[i+1] = (cs[i+5] - cs[i]) / 5
+    end
+    ret[end-4] = (A[end-2] + A[end-3] + A[end-4] + A[end-5] + A[end-6]) / 5
+    ret[end-3] = (A[end-1] + A[end-2] + A[end-3] + A[end-4] + A[end-5]) / 5
+    ret[end-2] = (A[end] + A[end-1] + A[end-2] + A[end-3] + A[end-4]) / 5
+    ret[end-1] = (A[end] + A[end-1] + A[end-2]) / 3
+    ret[end] = A[end]
+    return ret
+end
+
+"""
     writene(ne::Array{Float64}; path="")
 
 Write ne.dat at `path` given electron density array `ne`.
@@ -405,8 +380,6 @@ Write ne.dat at `path` given electron density array `ne`.
 range grid cells). It can also be flattened vector of the same length.
 """
 function writene(ne::Array{Float64}; path="")
-    ne[ne .> 3e9] .= 3e9
-
     open(joinpath(path,"ne.dat"), "w") do f
         write(f, permutedims(ne))  # for c++
     end
@@ -422,8 +395,6 @@ same as `ne`.
 range grid cells). It can also be flattened vector of the same length.
 """
 function writeni(ni::Array{Float64}; path="")
-    ni[ni .< 100e6] .= 100e6
-
     open(joinpath(path,"ni.dat"), "w") do f
         write(f, permutedims(ni))  # for c++
     end
@@ -449,25 +420,30 @@ end
 
 """
     run(file, computejob::ComputeJob, inputs=false; submitjob=true)
+    run(input, computejob::ComputeJob, inputs=false; submitjob=true)
 
 Generate the input files and attempt to run the emp2d code for the scenario
 described by `file` as `computejob`.
 
 Optionally provide an inputs::Inputs() struct. Otherwise default values are used.
 """
-function run(file, computejob::ComputeJob; inputs=nothing, submitjob=true)
+function run(file::String, computejob::ComputeJob; inputs=nothing, submitjob=true)
     isfile(file) || error("$file is not a valid file name")
 
     s = LMP.parse(file)
 
+    run(s, computejob; inputs, submitjob)
+end
+
+function run(scenario, computejob::ComputeJob; inputs=nothing, submitjob=true)
     if isnothing(inputs)
-        max_range = maximum(s.output_ranges)
+        max_range = maximum(scenario.output_ranges)
         max_range = rounduprange(max_range)
 
-        inputs = Inputs(LMPParams().earthradius, 110e3, 50e3, 500, 250, max_range, 500, [s.frequency])
+        inputs = Inputs(max_range, [scenario.frequency], 6369e3, 110e3, 50e3, 500, 250, 500)
     end
 
-    shfiles = build(s, computejob, inputs)
+    shfiles = build(scenario, computejob, inputs)
 
     if submitjob
         submitandrun(shfiles, computejob)
@@ -481,7 +457,7 @@ function submitandrun(shfile, computejob::ComputeJob)
     exefile = computejob.exefile
     exename = splitdir(exefile)[2]
     newexefile = joinpath(rundir, exename)
-    isfile(newexefile) || cp(exefile, newexefile)
+    cp(exefile, newexefile; force=true)
     runjob(computejob, shfile)
 end
 
@@ -491,10 +467,10 @@ function submitandrun(shfiles::AbstractVector, computejob::ComputeJob)
 
     for shfile in shfiles
         rundir, shfile = splitdir(shfile)
-        runname, shext = splitext(shfile)
+        runname, _ = splitext(shfile)
 
         newexefile = joinpath(rundir, exename)
-        isfile(newexefile) || cp(exefile, newexefile)
+        cp(exefile, newexefile; force=true)
         computejob.runname = runname
         runjob(computejob, shfile)
     end
@@ -550,14 +526,13 @@ function build(s::ExponentialInput, computejob::ComputeJob, inputs::Inputs)
     length(unique(s.b_mags)) == 1 || @warn "Magnetic field is not homogeneous"
 
     # Useful values
-    r, dr, th = generategrid(inputs)  # r is along radial direction (height)
+    r, _, th = generategrid(inputs)  # r is along radial direction (height)
     altitudes = r .- inputs.Re
 
     rr = length(r)
     hh = length(th)
 
     max_range = inputs.range
-    drange = inputs.drange
     rangevec = range(0, max_range, length=hh)
 
     # Fill in values for each waveguide segment
@@ -577,8 +552,8 @@ function build(s::ExponentialInput, computejob::ComputeJob, inputs::Inputs)
         end
 
         # Electron density profile
-        neprofile = LMP.waitprofile.(altitudes, s.hprimes[i], s.betas[i], cutoff_low=50e3, threshold=3e9)
-        ne[:,segment_begin_idx:segment_end_idx] .= neprofile
+        neprofile = LMP.waitprofile.(altitudes, s.hprimes[i], s.betas[i], cutoff_low=40e3, threshold=3e9)
+        ne[:,segment_begin_idx:segment_end_idx] .= moving_average(neprofile)
 
         # Electron collision profile
         nuprofile = LMP.electroncollisionfrequency.(altitudes)
@@ -589,8 +564,13 @@ function build(s::ExponentialInput, computejob::ComputeJob, inputs::Inputs)
         gepsilon[segment_begin_idx:segment_end_idx] .= s.ground_epsrs[i]
     end
 
+    # `ni` based on `ne`
+    ni = ne[:,1]  # makes a copy of first column of ne
+    ni[ni .< 100e6] .= 100e6
+
     maxf = maximum(inputs.DFTfreqs)
     if maxf > 50e3
+        @info "Using Ricker source because frequency is above 50 kHz"
         def = Defaults(taur=2/maxf, I0=10e5)
         source = Source(inputs, def, :ricker)
     else
@@ -608,7 +588,7 @@ function build(s::ExponentialInput, computejob::ComputeJob, inputs::Inputs)
     writeground(ground, path=rundir)
     writebfield(first(s.b_mags), inputs, path=rundir)
     writene(ne, path=rundir)
-    writeni(ne, path=rundir)
+    writeni(ni, path=rundir)
     writenu(nu, path=rundir)
 
     shfile = writeshfile(computejob)
@@ -629,14 +609,13 @@ function build(s::TableInput, computejob::ComputeJob, inputs::Inputs)
     length(unique(s.b_mags)) == 1 || @warn "Magnetic field is not homogeneous"
 
     # Useful values
-    r, dr, th = generategrid(inputs)  # r is along radial direction (height)
+    r, _, th = generategrid(inputs)  # r is along radial direction (height)
     altitudes = r .- inputs.Re
 
     rr = length(r)
     hh = length(th)
 
     max_range = inputs.range
-    drange = inputs.drange
     rangevec = range(0, max_range, length=hh)
 
     # Fill in values for each waveguide segment
@@ -656,20 +635,30 @@ function build(s::TableInput, computejob::ComputeJob, inputs::Inputs)
         end
 
         # Electron density profile
-        density_itp = LinearInterpolation(s.altitude, s.density[i], extrapolation_bc=Line())
-        ne[:,segment_begin_idx:segment_end_idx] .= density_itp(altitudes)
+        density_itp = interpolate(s.altitude, s.density[i], FritschButlandMonotonicInterpolation())
+        density_ext = extrapolate(density_itp, Flat())
+        # density_itp = LinearInterpolation(s.altitude, s.density[i], extrapolation_bc=Line())
+        ne[:,segment_begin_idx:segment_end_idx] .= moving_average(density_ext(altitudes))
 
         # Electron collision profile
-        collision_itp = LinearInterpolation(s.altitude, s.collision_frequency[i], extrapolation_bc=Line())
-        nu[:,segment_begin_idx:segment_end_idx] .= collision_itp(altitudes)
+        collision_itp = interpolate(s.altitude, s.collision_frequency[i], FritschButlandMonotonicInterpolation())
+        collision_ext = extrapolate(collision_itp, Flat())
+        # collision_itp = LinearInterpolation(s.altitude, s.collision_frequency[i], extrapolation_bc=Line())
+        nu[:,segment_begin_idx:segment_end_idx] .= collision_ext(altitudes)
 
         # Ground profile
         gsigma[segment_begin_idx:segment_end_idx] .= s.ground_sigmas[i]
         gepsilon[segment_begin_idx:segment_end_idx] .= s.ground_epsrs[i]
     end
 
+    # `ni` is based on `ne`
+    maximum(ne) > 3e9 && @warn "maximum(ne) > 3e9. FDTD may have issues with default parameters."
+    ni = ne[:,1]  # makes a copy of first column of ne
+    ni[ni .< 100e6] .= 100e6
+
     maxf = maximum(inputs.DFTfreqs)
     if maxf > 50e3
+        @info "Using Ricker source because frequency is above 50 kHz."
         def = Defaults(taur=2/maxf, I0=10e5)
         source = Source(inputs, def, :ricker)
     else
@@ -687,14 +676,13 @@ function build(s::TableInput, computejob::ComputeJob, inputs::Inputs)
     writeground(ground, path=rundir)
     writebfield(s.b_mags[1], inputs, path=rundir)
     writene(ne, path=rundir)
-    writeni(ne, path=rundir)
+    writeni(ni, path=rundir)
     writenu(nu, path=rundir)
 
     shfile = writeshfile(computejob)
 
     return shfile
 end
-
 
 """
     linear_exponential(def::Defaults, in::Inputs)
@@ -809,7 +797,7 @@ function generategrid(in::Inputs)
 
     r[1] = in.Re - in.nground*in.dr0
     if in.nground > 0
-        for i = 2:nground+1
+        for i = 2:in.nground+1
             r[i] = r[i-1] + in.dr0
             dr[i-1] = r[i] - r[i-1]
         end
@@ -845,8 +833,7 @@ Read `inputs.dat` and `dfts.dat` in directory `path` and return a `DFTFields`.
 """
 function readdfts(path)
     inputs = readinputs(path)
-    r, dr, th = generategrid(inputs)
-    rr = length(r)
+    _, _, th = generategrid(inputs)
     hh = length(th)
 
     f = open(joinpath(path, "dft.dat"),"r")
@@ -873,7 +860,7 @@ function readdfts(path)
 
     out = DFTFields(Vector{Float64})
     out.dist = th*inputs.Re
-    out.DFTfreqs = DFTfreqs
+    out.DFTfreqs = copy(DFTfreqs)
 
     for m = 1:numDFTfreqs
         for (field, vals) in Dict(:Er=>Er, :Et=>Et, :Ep=>Ep, :Hr=>Hr, :Ht=>Ht, :Hp=>Hp)
@@ -892,7 +879,6 @@ Read `inputs.dat` and `dfts.dat` in directory `path` and return a `BasicOutput`
 with amplitude in dB μV/m and phase in degrees corrected for dispersion.
 """
 function process(path)
-
     # Predetermine values for writing output
     fullpath = abspath(path)
     pathname = splitpath(fullpath)[end]  # proxy for filename
@@ -980,6 +966,16 @@ function process(path)
 end
 
 function writeshfile(s::LocalParallel)
+    if Sys.iswindows()
+        shfile = writeshfile_windows(s)
+    else
+        shfile = writeshfile_unix(s)
+    end
+    
+    return shfile
+end
+
+function writeshfile_unix(s::LocalParallel)
     runname = s.runname
     rundir = s.rundir
     numnodes = s.numnodes
@@ -988,6 +984,8 @@ function writeshfile(s::LocalParallel)
 
     shfile = joinpath(rundir, runname*".sh")
     endline = "\n"
+    
+    threadstring = "export OMP_NUM_THREADS=$numnodes"
 
     open(shfile, "w") do f
         write(f, "#!/bin/sh", endline)
@@ -997,16 +995,39 @@ function writeshfile(s::LocalParallel)
         write(f, "rm -f $rundir/output_D.dat", endline)
         write(f, "rm -f $rundir/output_H.dat", endline)
         write(f, "rm -f $rundir/output_J.dat", endline)
-        write(f, "rm -f $rundir/output_T.dat", endline)
-        write(f, "rm -f $rundir/output_O.dat", endline)
-        write(f, "rm -f $rundir/output_S.dat", endline)
-        write(f, "rm -f $rundir/Probe.dat", endline)
-        write(f, "rm -f $rundir/elve.dat", endline)
-        write(f, "rm -f $rundir/sferic.dat", endline)
         write(f, endline)
-        write(f, "export OMP_NUM_THREADS=$numnodes", endline)
+        write(f, threadstring, endline)
         write(f, endline)
         write(f, joinpath(rundir,exefile), endline)
+    end
+
+    return shfile
+end
+
+function writeshfile_windows(s::LocalParallel)
+    runname = s.runname
+    rundir = s.rundir
+    numnodes = s.numnodes
+    exefile = s.exefile
+    exefile = basename(exefile)
+
+    shfile = joinpath(rundir, runname*".bat")
+    endline = "\n"
+    
+    threadstring = "set OMP_NUM_THREADS=$numnodes"
+
+    open(shfile, "w") do f
+        write(f, "@echo off", endline)
+        write(f, endline)
+        write(f, "if exist $rundir\\output_K.dat del /F $rundir\\output_K.dat", endline)
+        write(f, "if exist $rundir\\output_E.dat del /F $rundir\\output_E.dat", endline)
+        write(f, "if exist $rundir\\output_D.dat del /F $rundir\\output_D.dat", endline)
+        write(f, "if exist $rundir\\output_H.dat del /F $rundir\\output_H.dat", endline)
+        write(f, "if exist $rundir\\output_J.dat del /F $rundir\\output_J.dat", endline)
+        write(f, endline)
+        write(f, threadstring, endline)
+        write(f, endline)
+        write(f, exefile, endline)
     end
 
     return shfile
@@ -1036,12 +1057,6 @@ function writeshfile(s::Summit)
         write(f, "rm -f $rundir/output_D.dat", endline)
         write(f, "rm -f $rundir/output_H.dat", endline)
         write(f, "rm -f $rundir/output_J.dat", endline)
-        write(f, "rm -f $rundir/output_T.dat", endline)
-        write(f, "rm -f $rundir/output_O.dat", endline)
-        write(f, "rm -f $rundir/output_S.dat", endline)
-        write(f, "rm -f $rundir/Probe.dat", endline)
-        write(f, "rm -f $rundir/elve.dat", endline)
-        write(f, "rm -f $rundir/sferic.dat", endline)
         write(f, endline)
         write(f, "module purge", endline)
         write(f, "module load intel", endline)
@@ -1055,7 +1070,7 @@ function writeshfile(s::Summit)
 end
 
 function runjob(s::LocalParallel, shfile)
-    jobname = read(`$shfile`, String)
+    jobname = read(Cmd(`$shfile`, dir=s.rundir), String)
 
     println(jobname)
 

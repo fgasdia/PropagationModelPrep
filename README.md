@@ -14,7 +14,7 @@ This package provides submodules `.EMP2D` and `.LWPC`. They both produce `BasicO
 
 ## EMP2D
 
-EMP2D is an FDTD propagation model ((Marshall, 2017)[https://doi.org/10.1109/TAP.2017.2758392]) which is usually run with OpenMP. A typical ~2000 km VLF propagation path may take 3-4 hours on a 12 core machine.
+EMP2D is an FDTD propagation model ((Marshall, 2017)[https://doi.org/10.1109/TAP.2017.2758392]) which is usually run with OpenMP. A typical ~2000 km VLF propagation path may take 2 hours on a modern 4 core machine.
 
 The `EMP2D` submodule provides `struct`s to generate input files and read output files from LWPC. These are similar to the MATLAB files written by Bob Marshall for setup and analysis of EMP2D results. There may be minor differences in default parameters to ensure consistency between the inputs to EMP2D and LWPC.
 
