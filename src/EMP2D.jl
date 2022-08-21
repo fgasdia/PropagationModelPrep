@@ -426,6 +426,13 @@ Generate the input files and attempt to run the emp2d code for the scenario
 described by `file` as `computejob`.
 
 Optionally provide an inputs::Inputs() struct. Otherwise default values are used.
+
+!!! Note
+
+    The electron density profile is lightly smoothed with a moving average filter in the radial
+    direction only. There may be artifacts from variations in the waveguide along the
+    propagation direction that cause minor artifacts without also smoothing the electron
+    density in the propagation direction.
 """
 function run(file::String, computejob::ComputeJob; inputs=nothing, submitjob=true)
     isfile(file) || error("$file is not a valid file name")
